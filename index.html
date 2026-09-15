@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>ম্যানেজমেন্ট প্যানেল — Dorkhasta</title>
+<title>ম্যানেজমেন্ট প্যানেল — Digital Point</title>
 <meta name="theme-color" content="#F6F1E4">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -193,7 +193,7 @@
   <div class="login-card">
     <div class="seal" id="loginSeal">দ</div>
     <h1>ম্যানেজমেন্ট প্যানেল</h1>
-    <p class="login-sub">Dorkhasta — অর্ডার ও ওয়েবসাইট ব্যবস্থাপনা</p>
+    <p class="login-sub">Digital Point — অর্ডার ও ওয়েবসাইট ব্যবস্থাপনা</p>
     <form id="loginForm">
       <div class="field"><label>ইউজার আইডি</label><input id="uid" placeholder="যেমন: admin" required autocomplete="username"></div>
       <div class="field"><label>পাসওয়ার্ড</label><input id="pass" type="password" placeholder="পাসওয়ার্ড" required autocomplete="current-password"></div>
@@ -210,7 +210,7 @@
     <div class="brand" id="brandBlock">
       <img id="brandLogoImg" class="brand-logo-admin hidden" alt="লোগো">
       <div>
-        <div id="brandTitleText">Dorkhasta<span>.</span></div>
+        <div id="brandTitleText">Digital Point<span>.</span></div>
         <small>ম্যানেজমেন্ট প্যানেল</small>
       </div>
     </div>
@@ -805,7 +805,7 @@ function memoWaText(o){
   const sline="------------------------";
   const rows=[];
   rows.push(dline);
-  rows.push("      DORKHASTA");
+  rows.push("      Digital Point");
   rows.push("     ক্যাশ মেমো / বিল");
   rows.push(dline);
   rows.push("অর্ডার নং : "+memoIdLabel(o));
@@ -821,7 +821,7 @@ function memoWaText(o){
   rows.push("সর্বমোট     : ৳"+m.total);
   if(m.note){ rows.push(sline); rows.push(m.note); }
   rows.push(dline);
-  rows.push("   ধন্যবাদান্তে — Dorkhasta");
+  rows.push("   ধন্যবাদান্তে — Digital Point");
   rows.push(dline);
   return rows.join("\n");
 }
@@ -835,7 +835,7 @@ window.showMemoView=function(orderId){
       <div class="atm-slot"></div>
       <div class="atm-memo-paper">
         <div class="atm-memo-head">
-          <div class="atm-memo-brand">DORKHASTA</div>
+          <div class="atm-memo-brand">Digital Point</div>
           <div class="atm-memo-sub">ক্যাশ মেমো / বিল</div>
         </div>
         <div class="atm-memo-divider"></div>
@@ -853,7 +853,7 @@ window.showMemoView=function(orderId){
         ${m.note?`<div class="atm-memo-divider dashed"></div><div class="atm-memo-row" style="display:block;"><span>${esc(m.note)}</span></div>`:""}
         <div class="atm-memo-divider"></div>
         <div class="atm-memo-barcode"></div>
-        <div class="atm-memo-thanks">ধন্যবাদান্তে — Dorkhasta</div>
+        <div class="atm-memo-thanks">ধন্যবাদান্তে — Digital Point</div>
       </div>
       <div class="atm-slot"></div>
     </div>
