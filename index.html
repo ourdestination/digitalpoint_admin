@@ -3,20 +3,28 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>ম্যানেজমেন্ট প্যানেল — Digital Point Admin</title>
+<title>ম্যানেজমেন্ট প্যানেল — Dorkhasta</title>
 <meta name="theme-color" content="#F6F1E4">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Tiro+Bangla:ital@0;1&family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --paper:#F6F1E4; --paper-alt:#EEE6D2; --ink:#1B2A22; --ink-soft:#4B5A50;
-    --stamp:#9C2B1B; --stamp-dark:#7C2115; --green:#1F4B3B; --gold:#A9812E;
-    --steel:#3B5B7C; --olive:#5C7A3A; --line:#D8CBA8; --card:#FFFDF7;
-    --shadow:0 10px 30px rgba(27,42,34,.08);
+    --paper:#F4F1FE; --paper-alt:#EAE3FB; --ink:#211A3E; --ink-soft:#6B6390;
+    --stamp:#FF3B6E; --stamp-dark:#DE1F53; --green:#12B886; --gold:#F5A623;
+    --steel:#3B82F6; --olive:#14B8A6; --line:#E1D9FB; --card:#FFFFFF;
+    --shadow:0 10px 30px rgba(108,60,213,.12);
+    --primary:#7C3AED; --primary-dark:#6423D6;
+    --grad-a:#7C3AED; --grad-b:#EC4899; --grad-c:#3B82F6;
+    --accent1:#FF6B6B; --accent2:#FFC93C; --accent3:#00C2A8; --accent4:#FF9F1C; --accent5:#4EA8DE; --accent6:#B14EF5;
   }
   *{box-sizing:border-box;}
-  body{margin:0;background:var(--paper);color:var(--ink);font-family:'Hind Siliguri',sans-serif;font-size:15.5px;line-height:1.6;}
+  body{margin:0;background:
+      radial-gradient(circle at 8% 0%, rgba(124,58,237,.10), transparent 40%),
+      radial-gradient(circle at 95% 12%, rgba(236,72,153,.10), transparent 40%),
+      radial-gradient(circle at 50% 100%, rgba(59,130,246,.08), transparent 45%),
+      var(--paper);
+    color:var(--ink);font-family:'Hind Siliguri',sans-serif;font-size:15.5px;line-height:1.6;}
   h1,h2,h3,h4,.disp{font-family:'Tiro Bangla',serif;font-weight:400;margin:0;color:var(--ink);}
   button,input,select,textarea{font:inherit;}
   button{cursor:pointer;border:0;background:none;}
@@ -25,9 +33,9 @@
   /* login */
   .login{min-height:100vh;display:grid;place-items:center;padding:20px;}
   .login-card{width:min(420px,100%);padding:34px;background:var(--card);border:1px solid var(--line);border-radius:4px;box-shadow:var(--shadow);}
-  .login-card .seal{width:56px;height:56px;border:1.5px solid var(--stamp);border-radius:50%;display:grid;place-items:center;margin:0 auto 14px;color:var(--stamp);font-family:'Tiro Bangla',serif;font-size:22px;}
-  .login-logo{width:56px;height:56px;object-fit:cover;border-radius:50%;display:block;margin:0 auto 14px;border:1.5px solid var(--line);background:#fff;}
-  .login-logo.hidden{display:none;}
+  .login-card{position:relative;overflow:hidden;}
+  .login-card::before{content:"";position:absolute;top:0;left:0;right:0;height:6px;background:linear-gradient(90deg,var(--grad-a),var(--grad-b),var(--grad-c));}
+  .login-card .seal{width:56px;height:56px;border-radius:50%;display:grid;place-items:center;margin:0 auto 14px;color:#fff;font-family:'Tiro Bangla',serif;font-size:22px;background:linear-gradient(135deg,var(--grad-a),var(--grad-b));}
   .login-card h1{text-align:center;font-size:26px;}
   .login-sub{text-align:center;color:var(--ink-soft);margin:8px 0 26px;font-size:14px;}
   .field{margin-bottom:16px;}
@@ -35,15 +43,15 @@
   .field input,.field select,.field textarea{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:3px;background:var(--paper);color:var(--ink);}
   .field input:focus,.field select:focus,.field textarea:focus{outline:2px solid var(--green);outline-offset:1px;}
   .field textarea{resize:vertical;min-height:80px;}
-  .btn{display:inline-block;padding:9px 18px;border-radius:3px;font-size:14.5px;font-weight:600;text-align:center;line-height:1.3;}
-  .btn-primary{background:var(--stamp);color:var(--paper);}
-  .btn-primary:hover{background:var(--stamp-dark);}
-  .btn-ghost{border:1px solid var(--ink);color:var(--ink);}
-  .btn-ghost:hover{background:var(--ink);color:var(--paper);}
-  .btn-soft{background:var(--paper-alt);color:var(--ink);}
+  .btn{display:inline-block;padding:9px 18px;border-radius:6px;font-size:14.5px;font-weight:600;text-align:center;line-height:1.3;transition:transform .12s ease,box-shadow .12s ease;}
+  .btn-primary{background:linear-gradient(135deg,var(--grad-a),var(--grad-b));color:#fff;box-shadow:0 6px 16px rgba(124,58,237,.28);}
+  .btn-primary:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(124,58,237,.38);}
+  .btn-ghost{border:1.5px solid var(--primary);color:var(--primary);}
+  .btn-ghost:hover{background:var(--primary);color:#fff;}
+  .btn-soft{background:var(--paper-alt);color:var(--primary-dark);}
   .btn-soft:hover{background:var(--line);}
-  .btn-danger{background:#fbe3df;color:var(--stamp-dark);}
-  .btn-danger:hover{background:#f4c9c2;}
+  .btn-danger{background:#ffe1e8;color:var(--stamp-dark);}
+  .btn-danger:hover{background:#ffc7d4;}
   .btn-sm{padding:6px 12px;font-size:12.5px;}
   .btn-wide{width:100%;}
   .btn:disabled{opacity:.55;cursor:not-allowed;}
@@ -51,15 +59,16 @@
   .setup-note b{color:var(--ink);}
 
   /* app shell */
-  .top{position:sticky;top:0;z-index:30;background:var(--paper);border-bottom:1px solid var(--line);padding:14px 24px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}
-  .brand{font-family:'Tiro Bangla',serif;font-size:20px;}
-  .brand span{color:var(--stamp);}
-  .brand small{display:block;font-family:'Hind Siliguri',sans-serif;font-size:12px;color:var(--ink-soft);font-weight:400;}
-  .who{display:flex;align-items:center;gap:14px;font-size:13.5px;color:var(--ink-soft);}
+  .top{position:sticky;top:0;z-index:30;background:linear-gradient(100deg,var(--grad-a),#A855F7 45%,var(--grad-b));box-shadow:0 4px 20px rgba(124,58,237,.25);padding:14px 24px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}
+  .brand{font-family:'Tiro Bangla',serif;font-size:20px;color:#fff;display:flex;align-items:center;gap:10px;}
+  .brand-logo-admin{height:36px;width:auto;border-radius:6px;display:block;background:#fff;padding:2px;}
+  .brand span{color:var(--accent2);}
+  .brand small{display:block;font-family:'Hind Siliguri',sans-serif;font-size:12px;color:rgba(255,255,255,.8);font-weight:400;}
+  .who{display:flex;align-items:center;gap:14px;font-size:13.5px;color:rgba(255,255,255,.9);}
 
   .notif-wrap{position:relative;}
-  .notif-btn{position:relative;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;color:var(--ink-soft);}
-  .notif-btn:hover{background:var(--paper-alt);color:var(--ink);}
+  .notif-btn{position:relative;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;color:#fff;}
+  .notif-btn:hover{background:rgba(255,255,255,.18);color:#fff;}
   .notif-btn svg{width:19px;height:19px;}
   .notif-btn.ring svg{animation:bell-ring .5s ease 2;}
   @keyframes bell-ring{0%,100%{transform:rotate(0);}20%{transform:rotate(14deg);}40%{transform:rotate(-12deg);}60%{transform:rotate(8deg);}80%{transform:rotate(-6deg);}}
@@ -76,20 +85,28 @@
   .notif-empty{padding:34px 14px;text-align:center;color:var(--ink-soft);font-size:13.5px;}
 
   .layout{max-width:1180px;margin:0 auto;padding:24px;display:grid;grid-template-columns:210px 1fr;gap:24px;align-items:start;}
-  .side{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:10px;position:sticky;top:78px;}
-  .side button{display:block;width:100%;text-align:right;padding:12px 14px;margin:2px 0;border-radius:3px;color:var(--ink-soft);font-size:14.5px;}
-  .side button.active,.side button:hover{background:var(--paper-alt);color:var(--ink);}
+  .side{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px;position:sticky;top:78px;box-shadow:var(--shadow);}
+  .side button{display:block;width:100%;text-align:right;padding:12px 14px;margin:2px 0;border-radius:6px;color:var(--ink-soft);font-size:14.5px;font-weight:600;transition:background .15s ease,color .15s ease;}
+  .side button:hover{background:var(--paper-alt);color:var(--primary);}
+  .side button.active{background:linear-gradient(135deg,var(--grad-a),var(--grad-b));color:#fff;box-shadow:0 4px 12px rgba(124,58,237,.3);}
   main{min-width:0;}
 
   .section-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;}
   .section-head h2{font-size:22px;}
 
   .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;}
-  .stat-card{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:18px;}
-  .stat-card b{font-family:'Tiro Bangla',serif;font-size:26px;display:block;}
+  .stat-card{background:var(--card);border:1px solid var(--line);border-top:4px solid var(--primary);border-radius:8px;padding:18px;box-shadow:var(--shadow);transition:transform .15s ease;}
+  .stat-card:hover{transform:translateY(-2px);}
+  .stat-card:nth-child(6n+1){border-top-color:var(--accent1);}
+  .stat-card:nth-child(6n+2){border-top-color:var(--accent2);}
+  .stat-card:nth-child(6n+3){border-top-color:var(--accent3);}
+  .stat-card:nth-child(6n+4){border-top-color:var(--accent4);}
+  .stat-card:nth-child(6n+5){border-top-color:var(--accent5);}
+  .stat-card:nth-child(6n+6){border-top-color:var(--accent6);}
+  .stat-card b{font-family:'Tiro Bangla',serif;font-size:26px;display:block;color:var(--ink);}
   .stat-card span{font-size:12.5px;color:var(--ink-soft);}
 
-  .card{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:20px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:20px;box-shadow:var(--shadow);}
   .empty{padding:30px 10px;text-align:center;color:var(--ink-soft);}
 
   .filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;}
@@ -110,8 +127,8 @@
   .badge-delivered{background:var(--green);}
   .badge-cancelled{background:var(--stamp);}
 
-  .modal{position:fixed;inset:0;z-index:60;background:rgba(27,42,34,.55);display:grid;place-items:center;padding:18px;}
-  .modalbox{width:min(600px,100%);max-height:90vh;overflow:auto;background:var(--card);border-radius:4px;padding:26px;}
+  .modal{position:fixed;inset:0;z-index:60;background:rgba(33,26,62,.6);display:grid;place-items:center;padding:18px;}
+  .modalbox{width:min(600px,100%);max-height:90vh;overflow:auto;background:var(--card);border-radius:10px;padding:26px;box-shadow:0 20px 50px rgba(33,26,62,.35);}
   .modalhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
   .modalhead h3{font-size:19px;}
   .detail-line{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px dashed var(--line);font-size:14.5px;}
@@ -124,7 +141,7 @@
   .timeline-dot{width:11px;height:11px;border-radius:50%;background:var(--green);margin-top:4px;}
   .timeline-time{font-size:12px;color:var(--ink-soft);}
 
-  .toast{position:fixed;right:18px;bottom:18px;z-index:80;background:var(--ink);color:var(--paper);padding:12px 18px;border-radius:4px;box-shadow:var(--shadow);font-size:14px;}
+  .toast{position:fixed;right:18px;bottom:18px;z-index:80;background:linear-gradient(135deg,var(--grad-a),var(--grad-b));color:#fff;padding:12px 18px;border-radius:8px;box-shadow:0 10px 24px rgba(124,58,237,.35);font-size:14px;}
 
   .list-item{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 4px;border-bottom:1px solid var(--line);}
   .list-item:last-child{border-bottom:0;}
@@ -139,16 +156,44 @@
     .stat-grid{grid-template-columns:1fr 1fr;}
     .order-row{grid-template-columns:1fr;}
   }
+
+  /* ---- ATM-style cash memo ---- */
+  .atm-memo{width:300px;max-width:100%;margin:0 auto;font-family:'Courier New',monospace;}
+  .atm-slot{height:12px;background:
+      linear-gradient(135deg,var(--paper) 25%,transparent 25%) -6px 0,
+      linear-gradient(225deg,var(--paper) 25%,transparent 25%) -6px 0,
+      linear-gradient(315deg,var(--paper) 25%,transparent 25%),
+      linear-gradient(45deg,var(--paper) 25%,transparent 25%);
+    background-size:12px 12px; background-color:#fff;}
+  .atm-memo-paper{background:#fff;border-left:1px dashed #bbb;border-right:1px dashed #bbb;padding:18px 16px 14px;color:#1a1a1a;box-shadow:0 4px 18px rgba(0,0,0,.12);}
+  .atm-memo-head{text-align:center;}
+  .atm-memo-brand{font-family:'Tiro Bangla',serif;font-weight:700;font-size:19px;letter-spacing:2px;}
+  .atm-memo-sub{font-size:12px;color:#555;margin-top:2px;}
+  .atm-memo-divider{border-top:1px solid #1a1a1a;margin:10px 0;}
+  .atm-memo-divider.dashed{border-top:1px dashed #999;}
+  .atm-memo-row{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:3px 0;}
+  .atm-memo-row span{color:#555;}
+  .atm-memo-row b{font-weight:700;text-align:left;}
+  .atm-memo-amount{font-size:15px;padding:6px 0;}
+  .atm-memo-amount b{color:var(--primary-dark);}
+  .atm-memo-barcode{height:34px;margin:12px 0 6px;background:repeating-linear-gradient(90deg,#1a1a1a 0,#1a1a1a 2px,transparent 2px,transparent 5px,#1a1a1a 5px,#1a1a1a 6px,transparent 6px,transparent 9px);}
+  .atm-memo-thanks{text-align:center;font-size:12px;color:#555;margin-top:4px;}
+  @media print{
+    body *{visibility:hidden;}
+    #atmMemoPrint, #atmMemoPrint *{visibility:visible;}
+    .modal{position:static!important;background:none!important;padding:0!important;}
+    .modalbox{position:static!important;overflow:visible!important;max-height:none!important;box-shadow:none!important;padding:0!important;width:auto!important;}
+    .modalhead,.toast{display:none!important;}
+  }
 </style>
 </head>
 <body>
 
 <section id="login" class="login">
   <div class="login-card">
-    <img id="loginLogo" class="login-logo hidden" alt="লোগো">
     <div class="seal" id="loginSeal">দ</div>
-    <h1 id="loginTitle">ম্যানেজমেন্ট প্যানেল</h1>
-    <p class="login-sub" id="loginSub">Digital Point Admin — অর্ডার ও ওয়েবসাইট ব্যবস্থাপনা</p>
+    <h1>ম্যানেজমেন্ট প্যানেল</h1>
+    <p class="login-sub">Dorkhasta — অর্ডার ও ওয়েবসাইট ব্যবস্থাপনা</p>
     <form id="loginForm">
       <div class="field"><label>ইউজার আইডি</label><input id="uid" placeholder="যেমন: admin" required autocomplete="username"></div>
       <div class="field"><label>পাসওয়ার্ড</label><input id="pass" type="password" placeholder="পাসওয়ার্ড" required autocomplete="current-password"></div>
@@ -162,7 +207,13 @@
 
 <section id="app" class="hidden">
   <header class="top">
-    <div class="brand">Digital Point Admin<span>.</span> <small>ম্যানেজমেন্ট প্যানেল</small></div>
+    <div class="brand" id="brandBlock">
+      <img id="brandLogoImg" class="brand-logo-admin hidden" alt="লোগো">
+      <div>
+        <div id="brandTitleText">Dorkhasta<span>.</span></div>
+        <small>ম্যানেজমেন্ট প্যানেল</small>
+      </div>
+    </div>
     <div class="who">
       <div class="notif-wrap">
         <button class="notif-btn" id="notifBtn" title="নোটিফিকেশন" onclick="toggleNotifPanel(event)">
@@ -225,7 +276,21 @@ const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&
 const fmt=x=>x?new Date(x).toLocaleString("bn-BD",{dateStyle:"medium",timeStyle:"short"}):"—";
 
 const STATUS_LABEL = {pending:"অপেক্ষমান", processing:"কাজ চলছে", ready:"প্রস্তুত (ডেলিভারির অপেক্ষায়)", delivered:"ডেলিভারি সম্পন্ন", cancelled:"বাতিল"};
-const PAYMENT_LABEL = {bkash:"বিকাশ", rocket:"রকেট", nagad:"নগদ"};
+const PAYMENT_LABEL = {bkash:"বিকাশ", rocket:"রকেট", nagad:"নগদ", banglaqr:"বাংলা কিউআর (QR)"};
+
+/* ---- brand logo: shown on the login seal and the header, pulled from site settings ---- */
+function applyLogo(url){
+  const img=$("brandLogoImg");
+  if(img){
+    if(url){ img.src=url; img.classList.remove("hidden"); }
+    else{ img.classList.add("hidden"); img.removeAttribute("src"); }
+  }
+  const seal=$("loginSeal");
+  if(seal) seal.innerHTML = url ? `<img src="${url}" alt="লোগো" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : "দ";
+}
+// dorkhast/site is publicly readable (the customer site reads it without login too),
+// so fetch the logo once immediately for the login screen, before any admin signs in.
+get(ref(db,"dorkhast/site/logo")).then(s=>applyLogo(s.val()||"")).catch(()=>{});
 
 /* ---- build a wa.me link from a local (0XXXXXXXXXX) phone number ---- */
 function waLink(phone){
@@ -250,25 +315,6 @@ window.sendTrackingLink=function(orderId, phone){
   let msg = "আপনার অর্ডার"+(idLabel?" ("+idLabel+")":"")+"-এর সর্বশেষ অবস্থা দেখতে এই লিংকে ক্লিক করুন:\n"+link;
   window.open(waLink(phone)+"?text="+encodeURIComponent(msg), "_blank");
 };
-
-/* ---- show the website's logo & name on the login screen (public read, no auth needed yet) ---- */
-(async function loadLoginBranding(){
-  try{
-    const snap = await get(ref(db,"dorkhast/site"));
-    const site = snap.exists() ? snap.val() : {};
-    const name = (site.siteName||"").trim() || "Digital Point Admin";
-    const logoImg = $("loginLogo"), seal = $("loginSeal");
-    if(site.logo){
-      logoImg.src = site.logo;
-      logoImg.classList.remove("hidden");
-      if(seal) seal.classList.add("hidden");
-    }
-    const titleEl = $("loginTitle"), subEl = $("loginSub");
-    if(titleEl) titleEl.textContent = "ম্যানেজমেন্ট প্যানেল";
-    if(subEl) subEl.textContent = name + " — অর্ডার ও ওয়েবসাইট ব্যবস্থাপনা";
-    document.title = name + " — ম্যানেজমেন্ট প্যানেল";
-  }catch(e){ console.error(e); }
-})();
 
 let D={orders:{}, site:{}, stats:{}, liveCount:0}, offs=[], activeTab="dashboard", siteLoaded=false, seededDefaults=false;
 let notifications=[], knownOrderIds=null;
@@ -419,7 +465,7 @@ function listenAll(){
     D.orders=newOrders;
     render(activeTab);
   }));
-  offs.push(onValue(ref(db,"dorkhast/site"), s=>{ D.site=s.val()||{}; siteLoaded=true; cleanupExpiredNotices(); render(activeTab); }));
+  offs.push(onValue(ref(db,"dorkhast/site"), s=>{ D.site=s.val()||{}; siteLoaded=true; applyLogo(D.site.logo||""); cleanupExpiredNotices(); render(activeTab); }));
   offs.push(onValue(ref(db,"dorkhast/stats"), s=>{ D.stats=s.val()||{}; render(activeTab); }));
   offs.push(onValue(ref(db,"dorkhast/presence"), s=>{ const v=s.val(); D.liveCount=v?Object.keys(v).length:0; render(activeTab); }));
 }
@@ -500,6 +546,7 @@ function orderRow(o){
     <span class="badge badge-${esc(o.status)}">${esc(STATUS_LABEL[o.status]||o.status)}</span>
     <div class="row-actions">
       <button class="btn btn-soft btn-sm" onclick='openOrder("${o.orderId}")'>বিস্তারিত</button>
+      <button class="btn btn-soft btn-sm" onclick='openMemo("${o.orderId}")'>🧾 মেমো</button>
       <button class="btn btn-soft btn-sm" onclick='sendTrackingLink("${o.orderId}","${esc(o.phone)}")'>ট্র্যাকিং লিংক পাঠান</button>
       <button class="btn btn-danger btn-sm" onclick='deleteOrder("${o.orderId}","${esc(o.phone)}")'>মুছুন</button>
     </div>
@@ -552,8 +599,6 @@ window.openOrder=function(orderId){
     ${!o.paymentInfo.verified?`<button class="btn btn-primary btn-sm" style="margin-top:8px;margin-bottom:12px;" onclick='verifyPayment("${orderId}")'>পেমেন্ট ভেরিফাই করুন</button>`:""}
     `:""}
 
-    ${deliveryFilesAdminHTML(o, orderId)}
-
     <div class="field" style="margin-top:18px;">
       <label>স্ট্যাটাস পরিবর্তন করুন</label>
       <select id="newStatus">
@@ -564,12 +609,8 @@ window.openOrder=function(orderId){
       <label>ট্র্যাকিং নোট (কাস্টমার এটি দেখতে পাবেন)</label>
       <textarea id="statusNote" placeholder="যেমন: সিভি তৈরি শেষ, রিভিউর জন্য পাঠানো হয়েছে"></textarea>
     </div>
-    <div class="field">
-      <label>ডেলিভারি ফাইল যুক্ত করুন (ঐচ্ছিক, সর্বোচ্চ ৪MB)</label>
-      <input type="file" id="deliveryFileInput">
-      <p style="font-size:12.5px;color:var(--ink-soft);margin:6px 0 0;">ফাইল যুক্ত করলে কাস্টমার তার অর্ডার ট্র্যাক অপশন থেকে সেটি নিজের ডিভাইসে সেভ করতে পারবে। স্ট্যাটাস "প্রস্তুত" নির্বাচন করলে অর্ডারের তথ্য দিয়ে একটি ক্যাশমেমো স্বয়ংক্রিয়ভাবে তৈরি হবে, যা কাস্টমারও সেভ করতে পারবে।</p>
-    </div>
     <button class="btn btn-primary btn-wide" id="updateBtn" onclick='updateOrder("${orderId}")'>আপডেট সংরক্ষণ করুন</button>
+    <button class="btn btn-soft btn-wide" style="margin-top:8px;" onclick='openMemo("${orderId}")'>🧾 ক্যাশ মেমো দেখুন / পাঠান</button>
     <button class="btn btn-soft btn-wide" style="margin-top:8px;" onclick='sendTrackingLink("${orderId}","${esc(o.phone)}")'>WhatsApp-এ ট্র্যাকিং লিংক পাঠান</button>
     <button class="btn btn-danger btn-wide" style="margin-top:8px;" onclick='deleteOrderFromModal("${orderId}","${esc(o.phone)}")'>অর্ডার ডিলিট করুন</button>
 
@@ -583,70 +624,12 @@ window.openOrder=function(orderId){
   `);
 };
 
-/* ---- delivery files: admin attaches a finished file to an order; customer can then download/save it from order tracking ---- */
-function humanFileSize(bytes){
-  bytes = Number(bytes||0);
-  if(bytes<1024) return bytes+" B";
-  if(bytes<1024*1024) return (bytes/1024).toFixed(1)+" KB";
-  return (bytes/1024/1024).toFixed(2)+" MB";
-}
-function deliveryFilesAdminHTML(o, orderId){
-  if(!o.deliveryFiles) return "";
-  const entries = Object.entries(o.deliveryFiles);
-  if(!entries.length) return "";
-  return `<div class="field" style="margin-top:18px;">
-    <label>যুক্ত করা ডেলিভারি ফাইল</label>
-    ${entries.map(([key,f])=>`<div class="detail-line">
-      <span>📎 ${esc(f.name)} <span style="color:var(--ink-soft);font-size:12.5px;">(${humanFileSize(f.size)})</span></span>
-      <button class="btn btn-danger btn-sm" type="button" onclick='removeDeliveryFile("${orderId}","${esc(o.phone)}","${key}")'>মুছুন</button>
-    </div>`).join("")}
-  </div>`;
-}
-function fileToDataURL(file){
-  return new Promise((resolve,reject)=>{
-    const reader=new FileReader();
-    reader.onload=()=>resolve(reader.result);
-    reader.onerror=()=>reject(new Error("ফাইল পড়া যায়নি"));
-    reader.readAsDataURL(file);
-  });
-}
-window.removeDeliveryFile=async function(orderId, phone, fileKey){
-  if(!confirm("এই ফাইলটি মুছে ফেলবেন?")) return;
-  try{
-    const updates={};
-    updates[`dorkhast/orders/${orderId}/deliveryFiles/${fileKey}`]=null;
-    if(phone) updates[`dorkhast/ordersByPhone/${phone}/${orderId}/deliveryFiles/${fileKey}`]=null;
-    await update(ref(db), updates);
-    toast("ফাইল মুছে ফেলা হয়েছে ✓");
-    if(D.orders[orderId]) openOrder(orderId);
-  }catch(e){
-    console.error(e);
-    toast("মুছতে সমস্যা হয়েছে: "+e.message);
-  }
-};
-
-/* ---- cash memo: auto-built from order info when status becomes "ready"; rendered/downloaded on the customer side ---- */
-function buildCashMemo(o, orderId){
-  const svc = Object.values(D.site?.services||{}).find(s=>s.title===o.service);
-  let amount = "";
-  if(o.paymentInfo && o.paymentInfo.amount) amount = "৳"+o.paymentInfo.amount;
-  else if(svc && svc.price) amount = svc.price;
-  return {
-    memoNo: "DKH-"+orderId.slice(-6).toUpperCase(),
-    name: o.name, phone: o.phone, service: o.service, amount,
-    details: o.details||"", generatedAt: Date.now()
-  };
-}
-
 window.updateOrder=async function(orderId){
   const o=D.orders[orderId];
   if(!o) return;
   const status=$("newStatus").value;
   const note=$("statusNote").value.trim() || STATUS_LABEL[status];
   const btn=$("updateBtn");
-  const fileInput=$("deliveryFileInput");
-  const file = fileInput && fileInput.files && fileInput.files[0];
-  if(file && file.size > 4*1024*1024) return toast("ফাইলের আকার ৪MB এর কম হতে হবে");
   btn.disabled=true; btn.textContent="সংরক্ষণ হচ্ছে...";
   try{
     const now=Date.now();
@@ -659,21 +642,6 @@ window.updateOrder=async function(orderId){
     updates[`dorkhast/ordersByPhone/${o.phone}/${orderId}/status`]=status;
     updates[`dorkhast/ordersByPhone/${o.phone}/${orderId}/updatedAt`]=now;
     updates[`dorkhast/ordersByPhone/${o.phone}/${orderId}/trackingHistory/${key}`]=entry;
-
-    if(file){
-      const dataUrl = await fileToDataURL(file);
-      const fileKey = push(ref(db,"dorkhast/orders/"+orderId+"/deliveryFiles")).key;
-      const fileEntry = {name:file.name, size:file.size, type:file.type||"", url:dataUrl, uploadedAt:now};
-      updates[`dorkhast/orders/${orderId}/deliveryFiles/${fileKey}`]=fileEntry;
-      updates[`dorkhast/ordersByPhone/${o.phone}/${orderId}/deliveryFiles/${fileKey}`]=fileEntry;
-    }
-
-    if(status==='ready'){
-      const memo = buildCashMemo(o, orderId);
-      updates[`dorkhast/orders/${orderId}/cashMemo`]=memo;
-      updates[`dorkhast/ordersByPhone/${o.phone}/${orderId}/cashMemo`]=memo;
-    }
-
     await update(ref(db), updates);
     toast("অর্ডারের অবস্থা আপডেট হয়েছে ✓");
     closeModal();
@@ -726,6 +694,193 @@ window.verifyPayment=async function(orderId){
     console.error(e);
     toast("ব্যর্থ: "+e.message);
   }
+};
+
+/* ---- ATM-style cash memo (admin-authored bill — never auto-generated;
+       admin adds line items / extra charges and an optional discount) ---- */
+function memoIdLabel(o){ return "DKH-"+o.orderId.slice(-6).toUpperCase(); }
+let memoDraft=null; // {orderId, items:[{label,amount}], discount, note}
+
+function readMemoDraftFromForm(){
+  if(!memoDraft) return;
+  memoDraft.items = memoDraft.items.map((it,i)=>{
+    const labelEl=$("memoItemLabel-"+i), amtEl=$("memoItemAmount-"+i);
+    return { label: labelEl?labelEl.value:it.label, amount: amtEl?(Number(amtEl.value)||0):it.amount };
+  });
+  const discEl=$("memoDiscount"); if(discEl) memoDraft.discount=Number(discEl.value)||0;
+  const noteEl=$("memoNote"); if(noteEl) memoDraft.note=noteEl.value;
+}
+function memoSubtotal(){
+  return memoDraft.items.reduce((s,it)=>s+(Number(it.amount)||0),0);
+}
+window.addMemoItem=function(){
+  readMemoDraftFromForm();
+  memoDraft.items.push({label:"", amount:0});
+  renderMemoEditor();
+};
+window.removeMemoItem=function(idx){
+  readMemoDraftFromForm();
+  memoDraft.items.splice(idx,1);
+  if(!memoDraft.items.length) memoDraft.items.push({label:"", amount:0});
+  renderMemoEditor();
+};
+function renderMemoEditor(){
+  const subtotal=memoSubtotal();
+  const discount=Number(memoDraft.discount)||0;
+  const total=Math.max(0, subtotal-discount);
+  modal("ক্যাশ মেমো তৈরি করুন", `
+    <p style="font-size:13px;color:var(--ink-soft);margin:-4px 0 14px;">সেবার মূল্য, বাড়তি চার্জ ও ছাড় যোগ করে কাস্টমারের জন্য একটি বিল তৈরি করুন। সংরক্ষণ না করা পর্যন্ত কাস্টমার কোনো মেমো দেখতে পাবেন না।</p>
+    <div id="memoItemsList">
+      ${memoDraft.items.map((it,i)=>`
+        <div style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-end;">
+          <div class="field" style="flex:1;margin-bottom:0;"><label>বিবরণ</label><input id="memoItemLabel-${i}" value="${esc(it.label)}" placeholder="যেমন: সিভি তৈরি / বাড়তি চার্জ"></div>
+          <div class="field" style="width:110px;margin-bottom:0;"><label>মূল্য (৳)</label><input id="memoItemAmount-${i}" type="number" value="${it.amount||0}"></div>
+          <button type="button" class="btn btn-danger btn-sm" onclick='removeMemoItem(${i})' ${memoDraft.items.length<=1?"disabled":""}>✕</button>
+        </div>
+      `).join("")}
+    </div>
+    <button type="button" class="btn btn-soft btn-sm" onclick="addMemoItem()" style="margin-bottom:18px;">＋ আইটেম যোগ করুন</button>
+    <div class="field"><label>ছাড় (৳, ঐচ্ছিক)</label><input id="memoDiscount" type="number" value="${discount||0}"></div>
+    <div class="field"><label>নোট (ঐচ্ছিক, বিলে দেখানো হবে)</label><textarea id="memoNote">${esc(memoDraft.note||"")}</textarea></div>
+    <div class="detail-line" style="font-size:15px;"><span>সাবটোটাল</span><span>৳${subtotal}</span></div>
+    ${discount?`<div class="detail-line" style="font-size:15px;"><span>ছাড়</span><span>−৳${discount}</span></div>`:""}
+    <div class="detail-line" style="font-size:17px;font-weight:700;"><span>সর্বমোট প্রদেয়</span><span>৳${total}</span></div>
+    <button class="btn btn-primary btn-wide" style="margin-top:16px;" onclick='saveMemo()'>মেমো সংরক্ষণ করুন</button>
+  `);
+}
+window.openMemoEditor=function(orderId){
+  const o=D.orders[orderId];
+  if(!o) return;
+  if(o.memo && o.memo.items && o.memo.items.length){
+    memoDraft={orderId, items:o.memo.items.map(it=>({label:it.label,amount:it.amount})), discount:o.memo.discount||0, note:o.memo.note||""};
+  }else{
+    memoDraft={orderId, items:[{label:o.service, amount:(o.paymentInfo&&o.paymentInfo.amount)||0}], discount:0, note:""};
+  }
+  renderMemoEditor();
+};
+window.saveMemo=async function(){
+  if(!memoDraft) return;
+  readMemoDraftFromForm();
+  const o=D.orders[memoDraft.orderId];
+  if(!o) return;
+  const items=memoDraft.items.filter(it=>(it.label&&it.label.trim()!=="")||it.amount);
+  if(!items.length) return toast("অন্তত একটি আইটেম দিন");
+  const subtotal=items.reduce((s,it)=>s+(Number(it.amount)||0),0);
+  const discount=Number(memoDraft.discount)||0;
+  const total=Math.max(0, subtotal-discount);
+  const memo={
+    items, discount, note:(memoDraft.note||"").trim(),
+    subtotal, total,
+    generatedAt: (o.memo&&o.memo.generatedAt) || Date.now(),
+    updatedAt: Date.now()
+  };
+  try{
+    const updates={};
+    updates[`dorkhast/orders/${memoDraft.orderId}/memo`]=memo;
+    updates[`dorkhast/ordersByPhone/${o.phone}/${memoDraft.orderId}/memo`]=memo;
+    await update(ref(db), updates);
+    toast("মেমো সংরক্ষণ হয়েছে ✓");
+    showMemoView(memoDraft.orderId);
+  }catch(e){
+    console.error(e);
+    toast("সংরক্ষণ ব্যর্থ: "+e.message);
+  }
+};
+window.deleteMemo=async function(orderId){
+  if(!confirm("এই মেমো মুছে ফেলবেন? কাস্টম্যার আর কোনো বিল দেখতে পাবেন না।")) return;
+  const o=D.orders[orderId];
+  if(!o) return;
+  try{
+    const updates={};
+    updates[`dorkhast/orders/${orderId}/memo`]=null;
+    updates[`dorkhast/ordersByPhone/${o.phone}/${orderId}/memo`]=null;
+    await update(ref(db), updates);
+    toast("মেমো মুছে ফেলা হয়েছে");
+    closeModal();
+  }catch(e){ toast("ব্যর্থ: "+e.message); }
+};
+function memoWaText(o){
+  const m=o.memo;
+  const dline="========================";
+  const sline="------------------------";
+  const rows=[];
+  rows.push(dline);
+  rows.push("      DORKHASTA");
+  rows.push("     ক্যাশ মেমো / বিল");
+  rows.push(dline);
+  rows.push("অর্ডার নং : "+memoIdLabel(o));
+  rows.push("তারিখ      : "+fmt(m.generatedAt));
+  rows.push(sline);
+  rows.push("নাম        : "+o.name);
+  rows.push("মোবাইল     : "+o.phone);
+  rows.push(sline);
+  (m.items||[]).forEach(it=>{ rows.push((it.label||"আইটেম")+" : ৳"+(it.amount||0)); });
+  rows.push(sline);
+  rows.push("সাবটোটাল   : ৳"+m.subtotal);
+  if(m.discount) rows.push("ছাড়        : −৳"+m.discount);
+  rows.push("সর্বমোট     : ৳"+m.total);
+  if(m.note){ rows.push(sline); rows.push(m.note); }
+  rows.push(dline);
+  rows.push("   ধন্যবাদান্তে — Dorkhasta");
+  rows.push(dline);
+  return rows.join("\n");
+}
+window.showMemoView=function(orderId){
+  const o=D.orders[orderId];
+  if(!o) return;
+  if(!o.memo) return openMemoEditor(orderId);
+  const m=o.memo;
+  modal("ক্যাশ মেমো", `
+    <div class="atm-memo" id="atmMemoPrint">
+      <div class="atm-slot"></div>
+      <div class="atm-memo-paper">
+        <div class="atm-memo-head">
+          <div class="atm-memo-brand">DORKHASTA</div>
+          <div class="atm-memo-sub">ক্যাশ মেমো / বিল</div>
+        </div>
+        <div class="atm-memo-divider"></div>
+        <div class="atm-memo-row"><span>অর্ডার নং</span><b>${memoIdLabel(o)}</b></div>
+        <div class="atm-memo-row"><span>তারিখ</span><b>${fmt(m.generatedAt)}</b></div>
+        <div class="atm-memo-divider dashed"></div>
+        <div class="atm-memo-row"><span>নাম</span><b>${esc(o.name)}</b></div>
+        <div class="atm-memo-row"><span>মোবাইল</span><b>${esc(o.phone)}</b></div>
+        <div class="atm-memo-divider dashed"></div>
+        ${(m.items||[]).map(it=>`<div class="atm-memo-row"><span>${esc(it.label||"আইটেম")}</span><b>৳${esc(it.amount||0)}</b></div>`).join("")}
+        <div class="atm-memo-divider dashed"></div>
+        <div class="atm-memo-row"><span>সাবটোটাল</span><b>৳${m.subtotal}</b></div>
+        ${m.discount?`<div class="atm-memo-row"><span>ছাড়</span><b>−৳${m.discount}</b></div>`:""}
+        <div class="atm-memo-row atm-memo-amount"><span>সর্বমোট প্রদেয়</span><b>৳${m.total}</b></div>
+        ${m.note?`<div class="atm-memo-divider dashed"></div><div class="atm-memo-row" style="display:block;"><span>${esc(m.note)}</span></div>`:""}
+        <div class="atm-memo-divider"></div>
+        <div class="atm-memo-barcode"></div>
+        <div class="atm-memo-thanks">ধন্যবাদান্তে — Dorkhasta</div>
+      </div>
+      <div class="atm-slot"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:18px;flex-wrap:wrap;">
+      <button class="btn btn-primary btn-wide" onclick='sendMemoWhatsApp("${orderId}")'>WhatsApp-এ মেমো পাঠান</button>
+      <button class="btn btn-soft btn-wide" onclick='printMemo()'>প্রিন্ট করুন</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+      <button class="btn btn-soft btn-wide" onclick='openMemoEditor("${orderId}")'>সম্পাদনা করুন</button>
+      <button class="btn btn-danger btn-wide" onclick='deleteMemo("${orderId}")'>মেমো মুছুন</button>
+    </div>
+  `);
+};
+window.openMemo=function(orderId){
+  const o=D.orders[orderId];
+  if(!o) return;
+  if(o.memo) showMemoView(orderId);
+  else openMemoEditor(orderId);
+};
+window.sendMemoWhatsApp=function(orderId){
+  const o=D.orders[orderId];
+  if(!o || !o.memo) return;
+  const text = "```\n"+memoWaText(o)+"\n```";
+  window.open(waLink(o.phone)+"?text="+encodeURIComponent(text), "_blank");
+};
+window.printMemo=function(){
+  window.print();
 };
 
 /* ---- services & pricing (merged) ---- */
@@ -1065,10 +1220,6 @@ function siteView(){
     <div class="field"><label>নতুন লোগো ছবি নির্বাচন করুন</label><input type="file" id="logoFile" accept="image/*"></div>
     <button class="btn btn-primary btn-sm" onclick="uploadLogo()" style="margin-bottom:20px;">লোগো সংরক্ষণ করুন</button>
 
-    <h4 style="margin-bottom:12px;">সাধারণ সেটিংস</h4>
-    <div class="field"><label>ওয়েবসাইট নাম</label><input id="cSiteName" value="${esc(D.site?.siteName||"")}" placeholder="যেমন: Digital Point Admin"></div>
-    <div class="field"><label>APK ডাউনলোড লিংক</label><input id="cApkLink" value="${esc(D.site?.apkLink||"")}" placeholder="যেমন: https://github.com/yourrepo/releases/download/v1.0/App.apk"></div>
-
     <h4 style="margin-bottom:12px;">হিরো সেকশন</h4>
     <div class="field"><label>শিরোনাম (HTML &lt;br&gt; ব্যবহার করা যাবে)</label><input id="heroTitle" value="${esc(hero.title||"")}"></div>
     <div class="field"><label>সাবটাইটেল</label><textarea id="heroSub">${esc(hero.subtitle||"")}</textarea></div>
@@ -1174,8 +1325,6 @@ window.saveMarquee=async function(){
 window.saveSiteInfo=async function(){
   try{
     await update(ref(db,"dorkhast/site"), {
-      siteName:$("cSiteName").value.trim(),
-      apkLink:$("cApkLink").value.trim(),
       hero:{title:$("heroTitle").value.trim(), subtitle:$("heroSub").value.trim()},
       contact:{
         whatsapp:$("cWa").value.trim(), phoneDisplay:$("cPhone").value.trim(),
