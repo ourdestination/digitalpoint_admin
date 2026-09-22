@@ -253,7 +253,7 @@
 <script type="module">
 import {initializeApp, deleteApp} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
 import {getAuth,signInWithEmailAndPassword,createUserWithEmailAndPassword,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
-import {getDatabase,ref,push,set,update,remove,onValue,get} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js";
+import {getDatabase,ref,push,set,update,remove,onValue,get,runTransaction} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js";
 
 /* ---- Firebase (same project as the public site / index_5, isolated under "dorkhast") ---- */
 const firebaseConfig = {
@@ -1068,13 +1068,38 @@ function reviewsView(){
 
 /* ---- customer records (grouped by service type, with one-click bulk WhatsApp messaging) ---- */
 let activeRecordSection=null;
+
+/* ---- Customer ID helper: DP001, DP002, DP003 ... ---- */
+async function nextAdminCustomerId(){
+  const counterRef = ref(db,"dorkhast/site/customerCounter");
+  const result = await runTransaction(counterRef, current => (Number(current)||0) + 1);
+  if(!result.committed) throw new Error("Customer ID তৈরি করা যায়নি");
+  return "DP" + String(result.snapshot.val()).padStart(3,"0");
+}
+
+async function getOrCreateAdminCustomerId(name, phone){
+  const cleanPhone = String(phone||"").replace(/\D/g,"");
+  const idx = await get(ref(db,"dorkhast/site/customerIndexByPhone/"+cleanPhone));
+  if(idx.exists()) return idx.val();
+
+  const id = await nextAdminCustomerId();
+  const now=Date.now();
+  await update(ref(db), {
+    ["dorkhast/site/customers/"+id]: {
+      customerId:id, name, phone:cleanPhone, createdAt:now, updatedAt:now, orderCount:0
+    },
+    ["dorkhast/site/customerIndexByPhone/"+cleanPhone]: id
+  });
+  return id;
+}
+
 function recordsView(){
   if(activeRecordSection && !D.site?.customerRecords?.[activeRecordSection]) activeRecordSection=null;
   if(activeRecordSection) return recordDetailView(activeRecordSection);
   const sections=Object.entries(D.site?.customerRecords||{}).sort((a,b)=>(a[1].at||0)-(b[1].at||0));
   return `
   <div class="section-head"><h2>কাস্টমার রেকর্ড</h2><button class="btn btn-primary btn-sm" onclick="addRecordSection()">＋ নতুন সেকশন (ম্যানুয়াল)</button></div>
-  <p style="font-size:13px;color:var(--ink-soft);margin:-8px 0 16px;">কাস্টমার যখন ওয়েবসাইটে অর্ডার করেন, তখন সেবার ধরণ অনুযায়ী সেকশনে তার নাম ও মোবাইল নম্বর স্বয়ংক্রিয়ভাবে রেকর্ড হয়ে যায় — অর্ডার সেকশন থেকে পরে অর্ডারটি মুছে ফেললেও এই রেকর্ড থেকে যায়। প্রয়োজনে এখান থেকে ম্যানুয়ালি নতুন সেকশন বা কাস্টমার যোগ করা যাবে, এবং যেকোনো রেকর্ড এডমিন চাইলে মুছেও ফেলতে পারবে। প্রতিটি সেকশন থেকে একসাথে সব কাস্টমারকে WhatsApp-এ মেসেজ পাঠানো যাবে।</p>
+  <p style="font-size:13px;color:var(--ink-soft);margin:-8px 0 16px;">কাস্টমার যখন ওয়েবসাইটে প্রথম অর্ডার করেন, তখন তার জন্য স্বয়ংক্রিয় Customer ID (DP001, DP002...) তৈরি হয় এবং সেবার ধরণ অনুযায়ী সেকশনে তার নাম, ID ও মোবাইল নম্বর রেকর্ড হয় — অর্ডার সেকশন থেকে পরে অর্ডারটি মুছে ফেললেও এই রেকর্ড থেকে যায়। প্রয়োজনে এখান থেকে ম্যানুয়ালি নতুন সেকশন বা কাস্টমার যোগ করা যাবে, এবং যেকোনো রেকর্ড এডমিন চাইলে মুছেও ফেলতে পারবে। প্রতিটি সেকশন থেকে একসাথে সব কাস্টমারকে WhatsApp-এ মেসেজ পাঠানো যাবে।</p>
   <div class="card">
     ${sections.length?sections.map(([id,sec])=>{
       const count=Object.keys(sec.customers||{}).length;
@@ -1129,7 +1154,7 @@ function recordDetailView(id){
   </div>
   <div class="card">
     ${customers.length?customers.map(([cid,c])=>`<div class="list-item">
-      <div class="info"><h4>${esc(c.name)}</h4><p>📞 ${esc(c.phone)}</p></div>
+      <div class="info"><h4>${esc(c.name)}</h4><p><strong>${esc(c.customerId||"ID নেই")}</strong> · 📞 ${esc(c.phone)}</p></div>
       <div class="list-actions">
         <a class="wa-icon" href="${esc(waLink(c.phone))}" target="_blank" title="WhatsApp এ মেসেজ করুন">${WA_ICON_SVG}</a>
         <button class="btn btn-danger btn-sm" onclick='deleteRecordCustomer("${id}","${cid}")'>মুছুন</button>
@@ -1149,9 +1174,12 @@ window.saveRecordCustomer=async function(sectionId){
   const phone=$("custPhone").value.trim();
   if(!name||!phone) return toast("নাম ও মোবাইল নম্বর দিন");
   try{
+    const customerId = await getOrCreateAdminCustomerId(name, phone);
     const key=push(ref(db,"dorkhast/site/customerRecords/"+sectionId+"/customers")).key;
-    await set(ref(db,"dorkhast/site/customerRecords/"+sectionId+"/customers/"+key), {name, phone, at:Date.now()});
-    closeModal(); toast("কাস্টমার যুক্ত হয়েছে ✓");
+    await set(ref(db,"dorkhast/site/customerRecords/"+sectionId+"/customers/"+key), {
+      customerId, name, phone, at:Date.now()
+    });
+    closeModal(); toast("কাস্টমার যুক্ত হয়েছে ✓ Customer ID: "+customerId);
   }catch(e){ toast("ব্যর্থ: "+e.message); }
 };
 window.deleteRecordCustomer=async function(sectionId, custId){
