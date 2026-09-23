@@ -178,6 +178,9 @@
   .atm-memo-amount b{color:var(--primary-dark);}
   .atm-memo-barcode{height:34px;margin:12px 0 6px;background:repeating-linear-gradient(90deg,#1a1a1a 0,#1a1a1a 2px,transparent 2px,transparent 5px,#1a1a1a 5px,#1a1a1a 6px,transparent 6px,transparent 9px);}
   .atm-memo-thanks{text-align:center;font-size:12px;color:#555;margin-top:4px;}
+  .atm-memo-mgmt{text-align:center;font-size:10.5px;color:#888;margin-top:2px;}
+  .atm-memo-brandrow{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;}
+  .atm-memo-logo{height:34px;width:34px;object-fit:cover;border-radius:6px;flex-shrink:0;}
   @media print{
     body *{visibility:hidden;}
     #atmMemoPrint, #atmMemoPrint *{visibility:visible;}
@@ -250,6 +253,7 @@
 <div id="modal" class="modal hidden"><div class="modalbox"><div class="modalhead"><h3 id="mt"></h3><button class="btn btn-soft btn-sm" onclick="closeModal()">✕</button></div><div id="mb"></div></div></div>
 <div id="toast" class="toast hidden"></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script type="module">
 import {initializeApp, deleteApp} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
 import {getAuth,signInWithEmailAndPassword,createUserWithEmailAndPassword,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
@@ -812,6 +816,7 @@ function memoWaText(o){
   rows.push("তারিখ      : "+fmt(m.generatedAt));
   rows.push(sline);
   rows.push("নাম        : "+o.name);
+  if(o.customerId) rows.push("কাস্টমার আইডি : "+o.customerId);
   rows.push("মোবাইল     : "+o.phone);
   rows.push(sline);
   (m.items||[]).forEach(it=>{ rows.push((it.label||"আইটেম")+" : ৳"+(it.amount||0)); });
@@ -819,9 +824,12 @@ function memoWaText(o){
   rows.push("সাবটোটাল   : ৳"+m.subtotal);
   if(m.discount) rows.push("ছাড়        : −৳"+m.discount);
   rows.push("সর্বমোট     : ৳"+m.total);
+  rows.push(sline);
+  rows.push("পেমেন্ট মাধ্যম: বিকাশ (সেন্ডমানি/ক্যাশইন) - 01518411872");
   if(m.note){ rows.push(sline); rows.push(m.note); }
   rows.push(dline);
   rows.push("   ধন্যবাদান্তে — Digital Point");
+  rows.push("   Management by Hredoy Roy");
   rows.push(dline);
   return rows.join("\n");
 }
@@ -830,12 +838,16 @@ window.showMemoView=function(orderId){
   if(!o) return;
   if(!o.memo) return openMemoEditor(orderId);
   const m=o.memo;
+  const logoUrl = D.site?.logo || "";
   modal("ক্যাশ মেমো", `
     <div class="atm-memo" id="atmMemoPrint">
       <div class="atm-slot"></div>
       <div class="atm-memo-paper">
         <div class="atm-memo-head">
-          <div class="atm-memo-brand">Digital Point</div>
+          <div class="atm-memo-brandrow">
+            ${logoUrl?`<img src="${esc(logoUrl)}" class="atm-memo-logo" alt="লোগো">`:""}
+            <div class="atm-memo-brand">Digital Point</div>
+          </div>
           <div class="atm-memo-sub">ক্যাশ মেমো / বিল</div>
         </div>
         <div class="atm-memo-divider"></div>
@@ -843,6 +855,7 @@ window.showMemoView=function(orderId){
         <div class="atm-memo-row"><span>তারিখ</span><b>${fmt(m.generatedAt)}</b></div>
         <div class="atm-memo-divider dashed"></div>
         <div class="atm-memo-row"><span>নাম</span><b>${esc(o.name)}</b></div>
+        ${o.customerId?`<div class="atm-memo-row"><span>কাস্টমার আইডি</span><b>${esc(o.customerId)}</b></div>`:""}
         <div class="atm-memo-row"><span>মোবাইল</span><b>${esc(o.phone)}</b></div>
         <div class="atm-memo-divider dashed"></div>
         ${(m.items||[]).map(it=>`<div class="atm-memo-row"><span>${esc(it.label||"আইটেম")}</span><b>৳${esc(it.amount||0)}</b></div>`).join("")}
@@ -850,16 +863,19 @@ window.showMemoView=function(orderId){
         <div class="atm-memo-row"><span>সাবটোটাল</span><b>৳${m.subtotal}</b></div>
         ${m.discount?`<div class="atm-memo-row"><span>ছাড়</span><b>−৳${m.discount}</b></div>`:""}
         <div class="atm-memo-row atm-memo-amount"><span>সর্বমোট প্রদেয়</span><b>৳${m.total}</b></div>
+        <div class="atm-memo-divider dashed"></div>
+        <div class="atm-memo-row" style="display:block;"><span>পেমেন্ট মাধ্যম: বিকাশ (সেন্ডমানি/ক্যাশইন) - 01518411872</span></div>
         ${m.note?`<div class="atm-memo-divider dashed"></div><div class="atm-memo-row" style="display:block;"><span>${esc(m.note)}</span></div>`:""}
         <div class="atm-memo-divider"></div>
         <div class="atm-memo-barcode"></div>
         <div class="atm-memo-thanks">ধন্যবাদান্তে — Digital Point</div>
+        <div class="atm-memo-mgmt">Management by Hredoy Roy</div>
       </div>
       <div class="atm-slot"></div>
     </div>
     <div style="display:flex;gap:8px;margin-top:18px;flex-wrap:wrap;">
       <button class="btn btn-primary btn-wide" onclick='sendMemoWhatsApp("${orderId}")'>WhatsApp-এ মেমো পাঠান</button>
-      <button class="btn btn-soft btn-wide" onclick='printMemo()'>প্রিন্ট করুন</button>
+      <button class="btn btn-soft btn-wide" onclick='saveMemoAsJPG("${orderId}")'>সেভ করুন</button>
     </div>
     <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
       <button class="btn btn-soft btn-wide" onclick='openMemoEditor("${orderId}")'>সম্পাদনা করুন</button>
@@ -873,14 +889,41 @@ window.openMemo=function(orderId){
   if(o.memo) showMemoView(orderId);
   else openMemoEditor(orderId);
 };
-window.sendMemoWhatsApp=function(orderId){
+window.sendMemoWhatsApp=async function(orderId){
   const o=D.orders[orderId];
   if(!o || !o.memo) return;
   const text = "```\n"+memoWaText(o)+"\n```";
+  const el=document.getElementById("atmMemoPrint");
+  try{
+    if(el && typeof html2canvas!=="undefined" && navigator.canShare){
+      const canvas = await html2canvas(el, {scale:2, backgroundColor:"#ffffff", useCORS:true});
+      const blob = await new Promise(res=>canvas.toBlob(res, "image/jpeg", 0.95));
+      const file = new File([blob], "Memo-"+memoIdLabel(o)+".jpg", {type:"image/jpeg"});
+      if(navigator.canShare({files:[file]})){
+        await navigator.share({ files:[file], title:"ক্যাশ মেমো", text:"Digital Point — ক্যাশ মেমো" });
+        return;
+      }
+    }
+  }catch(e){
+    if(e && e.name==="AbortError") return; // user closed the share sheet — don't fall back
+    console.error(e);
+  }
+  // this browser/device can't hand a file straight to WhatsApp (mostly desktop) —
+  // download the JPG and open the chat with the text version so it can be attached manually
+  window.saveMemoAsJPG(orderId);
   window.open(waLink(o.phone)+"?text="+encodeURIComponent(text), "_blank");
+  toast("এই ব্রাউজারে ছবি সরাসরি পাঠানো যায় না — ছবিটি ডাউনলোড হয়েছে, WhatsApp চ্যাটে সংযুক্ত করে পাঠান।");
 };
-window.printMemo=function(){
-  window.print();
+window.saveMemoAsJPG=function(orderId){
+  const el=document.getElementById("atmMemoPrint");
+  if(!el || typeof html2canvas==="undefined") return;
+  const o=D.orders[orderId];
+  html2canvas(el, {scale:2, backgroundColor:"#ffffff", useCORS:true}).then(canvas=>{
+    const link=document.createElement("a");
+    link.download = "Memo-"+(o?memoIdLabel(o):orderId)+".jpg";
+    link.href = canvas.toDataURL("image/jpeg", 0.95);
+    link.click();
+  }).catch(e=>{ console.error(e); toast("ছবি সেভ করা যায়নি"); });
 };
 
 /* ---- services & pricing (merged) ---- */
