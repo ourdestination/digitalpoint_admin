@@ -320,6 +320,43 @@ window.sendTrackingLink=function(orderId, phone){
   window.open(waLink(phone)+"?text="+encodeURIComponent(msg), "_blank");
 };
 
+/* ---- tracking link: tap = send via WhatsApp, long-press = copy link ---- */
+window.copyTrackingLink=async function(phone){
+  const link=trackingLinkFor(phone);
+  try{
+    await navigator.clipboard.writeText(link);
+    toast("ট্র্যাকিং লিংক কপি হয়েছে ✓");
+  }catch(e){
+    try{
+      const ta=document.createElement("textarea");
+      ta.value=link; ta.style.position="fixed"; ta.style.opacity="0";
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      toast("ট্র্যাকিং লিংক কপি হয়েছে ✓");
+    }catch(err){
+      toast("কপি করা যায়নি");
+    }
+  }
+  if(navigator.vibrate) navigator.vibrate(30);
+};
+const trackLP={timer:null, fired:false};
+window.trackPressStart=function(phone){
+  trackLP.fired=false;
+  clearTimeout(trackLP.timer);
+  trackLP.timer=setTimeout(()=>{
+    trackLP.fired=true;
+    copyTrackingLink(phone);
+  },550);
+};
+window.trackPressEnd=function(){
+  clearTimeout(trackLP.timer);
+};
+window.trackClick=function(orderId, phone){
+  if(trackLP.fired){ trackLP.fired=false; return; }
+  sendTrackingLink(orderId, phone);
+};
+
 let D={orders:{}, site:{}, stats:{}, liveCount:0}, offs=[], activeTab="dashboard", siteLoaded=false, seededDefaults=false;
 let notifications=[], knownOrderIds=null;
 
@@ -551,7 +588,7 @@ function orderRow(o){
     <div class="row-actions">
       <button class="btn btn-soft btn-sm" onclick='openOrder("${o.orderId}")'>বিস্তারিত</button>
       <button class="btn btn-soft btn-sm" onclick='openMemo("${o.orderId}")'>🧾 মেমো</button>
-      <button class="btn btn-soft btn-sm" onclick='sendTrackingLink("${o.orderId}","${esc(o.phone)}")'>ট্র্যাকিং লিংক পাঠান</button>
+      <button class="btn btn-soft btn-sm" onclick='trackClick("${o.orderId}","${esc(o.phone)}")' onmousedown='trackPressStart("${esc(o.phone)}")' onmouseup='trackPressEnd()' onmouseleave='trackPressEnd()' ontouchstart='trackPressStart("${esc(o.phone)}")' ontouchend='trackPressEnd()' oncontextmenu='return false'>ট্র্যাকিং লিংক পাঠান</button>
       <button class="btn btn-danger btn-sm" onclick='deleteOrder("${o.orderId}","${esc(o.phone)}")'>মুছুন</button>
     </div>
   </div>`;
@@ -615,7 +652,7 @@ window.openOrder=function(orderId){
     </div>
     <button class="btn btn-primary btn-wide" id="updateBtn" onclick='updateOrder("${orderId}")'>আপডেট সংরক্ষণ করুন</button>
     <button class="btn btn-soft btn-wide" style="margin-top:8px;" onclick='openMemo("${orderId}")'>🧾 ক্যাশ মেমো দেখুন / পাঠান</button>
-    <button class="btn btn-soft btn-wide" style="margin-top:8px;" onclick='sendTrackingLink("${orderId}","${esc(o.phone)}")'>WhatsApp-এ ট্র্যাকিং লিংক পাঠান</button>
+    <button class="btn btn-soft btn-wide" style="margin-top:8px;" onclick='trackClick("${orderId}","${esc(o.phone)}")' onmousedown='trackPressStart("${esc(o.phone)}")' onmouseup='trackPressEnd()' onmouseleave='trackPressEnd()' ontouchstart='trackPressStart("${esc(o.phone)}")' ontouchend='trackPressEnd()' oncontextmenu='return false'>WhatsApp-এ ট্র্যাকিং লিংক পাঠান (দীর্ঘক্ষণ চাপুন কপি করতে)</button>
     <button class="btn btn-danger btn-wide" style="margin-top:8px;" onclick='deleteOrderFromModal("${orderId}","${esc(o.phone)}")'>অর্ডার ডিলিট করুন</button>
 
     <h4 style="margin-top:22px;font-size:15px;">ইতিহাস</h4>
