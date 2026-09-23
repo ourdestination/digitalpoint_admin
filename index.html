@@ -305,12 +305,10 @@ function waLink(phone){
 }
 const WA_ICON_SVG = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.01 2C6.5 2 2.02 6.48 2.02 12c0 1.87.52 3.62 1.4 5.12L2 22l5.02-1.4c1.44.79 3.1 1.24 4.99 1.24 5.51 0 9.99-4.48 9.99-10S17.52 2 12.01 2zm0 18.18c-1.66 0-3.2-.45-4.53-1.24l-.32-.19-3.05.85.86-3-.2-.31A8.13 8.13 0 0 1 3.84 12c0-4.5 3.67-8.17 8.17-8.17S20.18 7.5 20.18 12s-3.67 8.18-8.17 8.18zm4.53-6.13c-.25-.12-1.47-.72-1.7-.8-.23-.08-.39-.12-.56.12-.16.25-.64.8-.78.96-.14.16-.29.18-.53.06-.25-.12-1.05-.39-2-1.23-.74-.66-1.24-1.47-1.39-1.72-.14-.25-.02-.38.11-.5.11-.11.25-.29.37-.43.12-.14.16-.25.25-.41.08-.16.04-.31-.02-.43-.06-.12-.56-1.35-.77-1.85-.2-.48-.41-.42-.56-.43h-.48c-.16 0-.43.06-.65.31-.23.25-.86.84-.86 2.05 0 1.21.88 2.38 1 2.54.12.16 1.73 2.64 4.2 3.7.59.25 1.05.4 1.41.52.59.19 1.13.16 1.55.1.47-.07 1.47-.6 1.68-1.18.21-.58.21-1.08.15-1.18-.06-.1-.23-.16-.48-.28z"/></svg>`;
 
-/* ---- customer-facing site URL (admin.html and index.html live side by side) ---- */
-function siteIndexUrl(){
-  return window.location.href.replace(/admin\.html(?:[?#].*)?$/i, "index.html");
-}
+/* ---- customer-facing site URL: always this fixed link, only the phone number changes ---- */
+const TRACKING_BASE_URL = "https://ourdestination.github.io/digitalpoint/";
 function trackingLinkFor(phone){
-  return siteIndexUrl() + "?track=" + encodeURIComponent(phone) + "#track";
+  return TRACKING_BASE_URL + "?track=" + encodeURIComponent(phone) + "#track";
 }
 window.sendTrackingLink=function(orderId, phone){
   const o=D.orders[orderId];
