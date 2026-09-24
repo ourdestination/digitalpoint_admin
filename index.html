@@ -73,6 +73,13 @@
   .notif-btn.ring svg{animation:bell-ring .5s ease 2;}
   @keyframes bell-ring{0%,100%{transform:rotate(0);}20%{transform:rotate(14deg);}40%{transform:rotate(-12deg);}60%{transform:rotate(8deg);}80%{transform:rotate(-6deg);}}
   .notif-badge{position:absolute;top:1px;right:1px;background:var(--stamp);color:var(--paper);font-size:10.5px;line-height:1;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 4px;font-weight:700;}
+  .header-chat-btn{position:relative;width:auto;height:36px;border-radius:18px;padding:0 14px 0 11px;display:flex!important;align-items:center;gap:7px;background:rgba(255,255,255,.1);}
+  .header-chat-btn:hover{background:rgba(255,255,255,.2);}
+  .header-chat-btn.active-tab{background:#fff;color:var(--primary,#1F4B3B);}
+  .header-chat-btn svg{width:17px;height:17px;flex-shrink:0;}
+  .header-chat-label{font-size:13.5px;font-weight:600;white-space:nowrap;font-family:'Hind Siliguri',sans-serif;}
+  .header-chat-btn .notif-badge{position:static;margin-inline-start:1px;}
+  @media (max-width:640px){ .header-chat-label{display:none;} .header-chat-btn{padding:0 9px;} }
   .notif-panel{position:absolute;top:46px;right:0;width:320px;max-height:420px;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:6px;box-shadow:var(--shadow);z-index:70;}
   .notif-head{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);font-size:13px;}
   .notif-clear{font-size:12px;color:var(--green);text-decoration:underline;}
@@ -149,6 +156,23 @@
   .list-item .info p{margin:4px 0 0;font-size:13.5px;color:var(--ink-soft);}
   .list-actions{display:flex;gap:8px;flex-shrink:0;}
 
+  /* live chat (admin side) */
+  .chat-row{cursor:pointer;}
+  .chat-row:hover{background:var(--paper-alt);}
+  .chat-row-avatar{width:38px;height:38px;border-radius:50%;overflow:hidden;background:var(--primary);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-family:'Tiro Bangla',serif;font-size:16px;flex-shrink:0;}
+  .chat-row-dot{width:9px;height:9px;border-radius:50%;background:var(--stamp);flex-shrink:0;}
+  .chat-panel{display:flex;flex-direction:column;height:min(560px,70vh);}
+  .chat-panel-head{display:flex;align-items:center;gap:10px;padding-bottom:14px;border-bottom:1px solid var(--line);margin-bottom:14px;}
+  .chat-panel-body{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:6px 2px;}
+  .chat-msg{max-width:74%;padding:9px 13px;border-radius:14px;font-size:14.5px;line-height:1.5;word-break:break-word;}
+  .chat-msg.mine{align-self:flex-end;background:linear-gradient(135deg,var(--grad-a),var(--grad-b));color:#fff;border-bottom-right-radius:3px;}
+  .chat-msg.theirs{align-self:flex-start;background:var(--paper-alt);color:var(--ink);border-bottom-left-radius:3px;}
+  .chat-msg .chat-msg-time{display:block;font-size:10.5px;opacity:.75;margin-top:4px;}
+  .chat-panel-input{display:flex;gap:10px;padding-top:12px;border-top:1px solid var(--line);margin-top:10px;}
+  .chat-panel-input textarea{flex:1;resize:none;height:44px;padding:10px 13px;border:1px solid var(--line);border-radius:20px;font-family:'Hind Siliguri',sans-serif;font-size:14.5px;background:var(--paper);}
+  .chat-panel-input button{background:linear-gradient(135deg,var(--grad-a),var(--grad-b));color:#fff;border:0;border-radius:50%;width:42px;height:42px;flex-shrink:0;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+
   @media (max-width:820px){
     .layout{grid-template-columns:1fr;}
     .side{position:static;display:flex;overflow-x:auto;gap:4px;}
@@ -218,6 +242,11 @@
       </div>
     </div>
     <div class="who">
+      <button class="notif-btn header-chat-btn" id="chatHeaderBtn" data-tab="chats" title="Digital Support" onclick="goToChatsTab()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+        <span class="header-chat-label">Digital Support</span>
+        <span id="chatTabBadge" class="notif-badge hidden">0</span>
+      </button>
       <div class="notif-wrap">
         <button class="notif-btn" id="notifBtn" title="নোটিফিকেশন" onclick="toggleNotifPanel(event)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
@@ -355,7 +384,8 @@ window.trackClick=function(orderId, phone){
   sendTrackingLink(orderId, phone);
 };
 
-let D={orders:{}, site:{}, stats:{}, liveCount:0}, offs=[], activeTab="dashboard", siteLoaded=false, seededDefaults=false;
+let D={orders:{}, site:{}, stats:{}, liveCount:0, chats:{}}, offs=[], activeTab="dashboard", siteLoaded=false, seededDefaults=false;
+let activeChatPhone=null, chatDraft="";
 let notifications=[], knownOrderIds=null;
 
 /* ---- notification sound (Web Audio, no external file needed) ---- */
@@ -507,20 +537,48 @@ function listenAll(){
   offs.push(onValue(ref(db,"dorkhast/site"), s=>{ D.site=s.val()||{}; siteLoaded=true; applyLogo(D.site.logo||""); cleanupExpiredNotices(); render(activeTab); }));
   offs.push(onValue(ref(db,"dorkhast/stats"), s=>{ D.stats=s.val()||{}; render(activeTab); }));
   offs.push(onValue(ref(db,"dorkhast/presence"), s=>{ const v=s.val(); D.liveCount=v?Object.keys(v).length:0; render(activeTab); }));
+  offs.push(onValue(ref(db,"dorkhast/chats"), s=>{
+    D.chats=s.val()||{};
+    renderChatBadge();
+    render(activeTab);
+    if(activeTab==="chats" && activeChatPhone) scrollChatToBottom();
+  }));
+}
+function renderChatBadge(){
+  const badge=$("chatTabBadge");
+  if(!badge) return;
+  const unread=Object.values(D.chats||{}).filter(c=>c.meta && c.meta.unreadForAdmin).length;
+  if(unread>0){ badge.textContent=unread>99?"99+":String(unread); badge.classList.remove("hidden"); }
+  else badge.classList.add("hidden");
+}
+function scrollChatToBottom(){
+  requestAnimationFrame(()=>{
+    const el=$("chatPanelBody");
+    if(el) el.scrollTop = el.scrollHeight;
+  });
 }
 
 document.querySelectorAll(".side button").forEach(b=>b.onclick=()=>{
   document.querySelectorAll(".side button").forEach(x=>x.classList.remove("active"));
   b.classList.add("active");
+  $("chatHeaderBtn").classList.remove("active-tab");
   activeTab=b.dataset.tab;
   render(activeTab);
 });
+window.goToChatsTab=function(){
+  document.querySelectorAll(".side button").forEach(x=>x.classList.remove("active"));
+  $("chatHeaderBtn").classList.add("active-tab");
+  activeChatPhone=null;
+  activeTab="chats";
+  render("chats");
+};
 
 function render(tab){
   activeTab=tab;
   const m=$("main");
   if(tab==="dashboard") m.innerHTML=dashboard();
   else if(tab==="orders") m.innerHTML=ordersView();
+  else if(tab==="chats"){ m.innerHTML=chatsView(); if(activeChatPhone) scrollChatToBottom(); }
   else if(tab==="services") m.innerHTML=servicesView();
   else if(tab==="notices") m.innerHTML=noticesView();
   else if(tab==="reviews") m.innerHTML=reviewsView();
@@ -1308,6 +1366,114 @@ window.sendBulkMessage=function(sectionId){
       <a class="btn btn-soft btn-sm" href="${esc(waLink(c.phone))}?text=${encodeURIComponent(msg)}" target="_blank">পাঠান</a>
     </div>`).join("")}
   `);
+};
+
+/* ---- live chat (customer <-> admin, one thread per phone number) ---- */
+function chatAvatarHTML(name, photo){
+  if(photo) return `<img src="${esc(photo)}" style="width:100%;height:100%;object-fit:cover;">`;
+  return esc((name||"?").trim().charAt(0).toUpperCase() || "?");
+}
+function chatsView(){
+  if(activeChatPhone && !D.chats?.[activeChatPhone]) activeChatPhone=null;
+  if(activeChatPhone) return chatDetailView(activeChatPhone);
+  const threads = Object.entries(D.chats||{})
+    .map(([phone,c])=>({phone, meta:c.meta||{}, msgCount:c.messages?Object.keys(c.messages).length:0}))
+    .sort((a,b)=>(b.meta.lastMessageAt||0)-(a.meta.lastMessageAt||0));
+  return `
+  <div class="section-head"><h2>Digital Support</h2></div>
+  <p style="font-size:13px;color:var(--ink-soft);margin:-8px 0 16px;">কাস্টমার তার প্রোফাইলে লগইন করে এখান থেকে সরাসরি আপনার সাথে চ্যাট করতে পারবেন। নিচের ইনবক্স থেকে যেকোনো কাস্টমারের কথোপকথনে ক্লিক করে সরাসরি রিপ্লাই দিন।</p>
+  <div class="card">
+    ${threads.length?threads.map(t=>{
+      const c = D.site?.customers?.[t.meta.customerId] || {};
+      const name = t.meta.name || c.name || t.phone;
+      const photo = c.photo || "";
+      const unread = t.meta.unreadForAdmin;
+      return `<div class="list-item chat-row" onclick='openChat("${esc(t.phone)}")'>
+        <div style="display:flex;align-items:center;gap:12px;min-width:0;">
+          <span class="chat-row-avatar">${chatAvatarHTML(name,photo)}</span>
+          <div class="info" style="min-width:0;">
+            <h4>${esc(name)} ${unread?'<span class="chat-row-dot" style="display:inline-block;margin-inline-start:6px;"></span>':""}</h4>
+            <p style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px;">${esc(t.meta.lastMessage||"—")}</p>
+          </div>
+        </div>
+        <div class="list-actions">
+          <span style="font-size:12px;color:var(--ink-soft);white-space:nowrap;">${fmt(t.meta.lastMessageAt)}</span>
+          <button class="btn btn-danger btn-sm" onclick='event.stopPropagation();deleteChatThread("${esc(t.phone)}")'>মুছুন</button>
+        </div>
+      </div>`;
+    }).join(""):`<div class="empty">এখনও কোনো কাস্টমার চ্যাট শুরু করেননি।</div>`}
+  </div>`;
+}
+window.deleteChatThread=async function(phone){
+  if(!confirm("এই কাস্টমারের সাথে হওয়া পুরো চ্যাট স্থায়ীভাবে মুছে যাবে। আপনি কি নিশ্চিত?")) return;
+  try{
+    await remove(ref(db,"dorkhast/chats/"+phone));
+    if(activeChatPhone===phone) activeChatPhone=null;
+    toast("চ্যাট মুছে ফেলা হয়েছে");
+  }catch(e){ toast("মুছতে সমস্যা: "+e.message); }
+};
+window.openChat=function(phone){
+  activeChatPhone=phone;
+  chatDraft="";
+  update(ref(db,"dorkhast/chats/"+phone+"/meta"), {unreadForAdmin:false}).catch(()=>{});
+  render("chats");
+};
+window.backToChats=function(){
+  activeChatPhone=null;
+  render("chats");
+};
+function chatDetailView(phone){
+  const c = D.chats?.[phone] || {};
+  const meta = c.meta || {};
+  const cust = D.site?.customers?.[meta.customerId] || {};
+  const name = meta.name || cust.name || phone;
+  const msgs = c.messages ? Object.values(c.messages).sort((a,b)=>a.at-b.at) : [];
+  return `
+  <div class="section-head">
+    <h2>Digital Support</h2>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-danger btn-sm" onclick='deleteChatThread("${esc(phone)}")'>চ্যাট মুছুন</button>
+      <button class="btn btn-soft btn-sm" onclick="backToChats()">← ইনবক্সে ফিরুন</button>
+    </div>
+  </div>
+  <div class="card chat-panel">
+    <div class="chat-panel-head">
+      <span class="chat-row-avatar">${chatAvatarHTML(name, cust.photo||"")}</span>
+      <div>
+        <h4 style="font-size:16px;">${esc(name)}</h4>
+        <p style="font-size:12.5px;color:var(--ink-soft);margin-top:2px;">📞 ${esc(phone)} <a class="wa-icon" href="${esc(waLink(phone))}" title="WhatsApp এ মেসেজ করুন">${WA_ICON_SVG}</a></p>
+      </div>
+    </div>
+    <div class="chat-panel-body" id="chatPanelBody">
+      ${msgs.length?msgs.map(m=>`<div class="chat-msg ${m.sender==='admin'?'mine':'theirs'}">${esc(m.text)}<span class="chat-msg-time">${fmt(m.at)}</span></div>`).join(""):`<div class="empty">এখনও কোনো মেসেজ নেই।</div>`}
+    </div>
+    <div class="chat-panel-input">
+      <textarea id="chatReplyInput" placeholder="উত্তর লিখুন..." oninput="chatDraft=this.value" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAdminChatMessage('${esc(phone)}');}">${esc(chatDraft)}</textarea>
+      <button type="button" onclick="sendAdminChatMessage('${esc(phone)}')" aria-label="পাঠান">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>
+      </button>
+    </div>
+  </div>`;
+}
+window.sendAdminChatMessage=async function(phone){
+  const input=$("chatReplyInput");
+  const text=(input?input.value:chatDraft).trim();
+  if(!text) return;
+  chatDraft="";
+  if(input) input.value="";
+  const now=Date.now();
+  const msgKey=push(ref(db,"dorkhast/chats/"+phone+"/messages")).key;
+  const meta = (D.chats?.[phone]||{}).meta || {};
+  const updates={};
+  updates["dorkhast/chats/"+phone+"/messages/"+msgKey]={sender:"admin", text, at:now};
+  updates["dorkhast/chats/"+phone+"/meta"]={
+    ...meta, phone, lastMessage:text, lastMessageAt:now, unreadForAdmin:false, unreadForCustomer:true
+  };
+  try{
+    await update(ref(db), updates);
+  }catch(e){
+    toast("পাঠানো যায়নি: "+e.message);
+  }
 };
 
 /* ---- site info ---- */
