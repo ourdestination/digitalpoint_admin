@@ -269,6 +269,7 @@
       <button class="active" data-tab="dashboard">ড্যাশবোর্ড</button>
       <button data-tab="orders">অর্ডার ব্যবস্থাপনা</button>
       <button data-tab="services">সেবা ও মূল্য তালিকা</button>
+      <button data-tab="specialCards">স্পেশাল সেবা কার্ড</button>
       <button data-tab="notices">নোটিশ বোর্ড</button>
       <button data-tab="reviews">কাস্টমার রিভিউ</button>
       <button data-tab="records">কাস্টমার রেকর্ড</button>
@@ -580,6 +581,7 @@ function render(tab){
   else if(tab==="orders") m.innerHTML=ordersView();
   else if(tab==="chats"){ m.innerHTML=chatsView(); if(activeChatPhone) scrollChatToBottom(); }
   else if(tab==="services") m.innerHTML=servicesView();
+  else if(tab==="specialCards") m.innerHTML=specialCardsView();
   else if(tab==="notices") m.innerHTML=noticesView();
   else if(tab==="reviews") m.innerHTML=reviewsView();
   else if(tab==="records") m.innerHTML=recordsView();
@@ -1093,6 +1095,79 @@ window.saveService=async function(id){
   }catch(e){ toast("সংরক্ষণ ব্যর্থ: "+e.message); }
 };
 
+/* ---- special service cards (shown on the customer's own account/overview tab) ---- */
+function specialCardsView(){
+  const items=Object.entries(D.site?.specialCards||{}).sort((a,b)=>(a[1].sort||0)-(b[1].sort||0));
+  return `
+  <div class="section-head"><h2>স্পেশাল সেবা কার্ড</h2><button class="btn btn-primary btn-sm" onclick="addSpecialCard()">＋ নতুন কার্ড</button></div>
+  <p style="font-size:13px;color:var(--ink-soft);margin:-8px 0 16px;">লগইন করা কাস্টমার তার নিজের অ্যাকাউন্ট প্যানেলের ওভারভিউ ট্যাবে এই কার্ডগুলো দেখতে পাবেন। কার্ডে লিংক দিলে ক্লিকে সেই লিংক খুলবে, লিংক না দিলে ক্লিকে ম্যানুয়াল অর্ডার ফর্মে ওই কার্ডের নাম বসিয়ে দেওয়া হবে। নিচের ↑ ↓ বাটন দিয়ে ক্রম পরিবর্তন করা যাবে।</p>
+  <div class="card">
+    ${items.length?items.map(([id,c],i)=>`<div class="list-item">
+      <div class="info" style="display:flex;align-items:center;gap:12px;">
+        ${c.image?`<img src="${c.image}" alt="" style="width:40px;height:40px;object-fit:contain;border-radius:8px;border:1px solid var(--line);background:var(--paper);flex-shrink:0;">`:`<span style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-size:20px;border-radius:8px;border:1px solid var(--line);background:var(--paper);flex-shrink:0;">🛎️</span>`}
+        <div><h4>${i+1}. ${esc(c.title)}${c.price?` — ${esc(c.discountPrice||c.price)}`:""}${c.discount?` <span style="color:var(--stamp-dark);font-weight:600;">(${esc(c.discount)})</span>`:""}</h4>${c.link?`<p style="word-break:break-all;">🔗 ${esc(c.link)}</p>`:`<p style="color:var(--ink-soft);">লিংক নেই — ক্লিকে ম্যানুয়াল অর্ডার ফর্ম খুলবে</p>`}</div>
+      </div>
+      <div class="list-actions">
+        <button class="btn btn-soft btn-sm" title="উপরে সরান" ${i===0?"disabled":""} onclick='moveSpecialCard("${id}",-1)'>↑</button>
+        <button class="btn btn-soft btn-sm" title="নিচে সরান" ${i===items.length-1?"disabled":""} onclick='moveSpecialCard("${id}",1)'>↓</button>
+        <button class="btn btn-soft btn-sm" onclick='editSpecialCard("${id}")'>সম্পাদনা</button>
+        <button class="btn btn-danger btn-sm" onclick='deleteEntry("specialCards","${id}")'>মুছুন</button>
+      </div>
+    </div>`).join(""):`<div class="empty">এখনও কোনো স্পেশাল সেবা কার্ড যুক্ত করা হয়নি।</div>`}
+  </div>`;
+}
+window.moveSpecialCard=async function(id, dir){
+  const items=Object.entries(D.site?.specialCards||{}).sort((a,b)=>(a[1].sort||0)-(b[1].sort||0));
+  const idx=items.findIndex(([k])=>k===id);
+  const swapIdx=idx+dir;
+  if(idx<0||swapIdx<0||swapIdx>=items.length) return;
+  const [idA,cA]=items[idx], [idB,cB]=items[swapIdx];
+  const sortA=cA.sort||0, sortB=cB.sort||0;
+  try{
+    const updates={};
+    updates[`dorkhast/site/specialCards/${idA}/sort`]=sortB;
+    updates[`dorkhast/site/specialCards/${idB}/sort`]=sortA;
+    await update(ref(db), updates);
+  }catch(e){ toast("ক্রম পরিবর্তন ব্যর্থ: "+e.message); }
+};
+window.addSpecialCard=()=>specialCardModal();
+window.editSpecialCard=id=>specialCardModal(id, D.site.specialCards[id]);
+function specialCardModal(id, c){
+  c=c||{};
+  modal(id?"কার্ড সম্পাদনা":"নতুন স্পেশাল সেবা কার্ড", `
+    <p style="font-size:13px;color:var(--ink-soft);margin:-4px 0 14px;">এই কার্ড কাস্টমার প্যানেলে "সেবাসমূহ ও মূল্য তালিকা"-এর কার্ডের মতোই (ছাড়ের ট্যাগ, মূল্য, বিবরণ সহ) দেখানো হবে।</p>
+    <div class="field"><label>নাম</label><input id="scTitle" value="${esc(c.title||"")}" placeholder="যেমন: জরুরি পাসপোর্ট সেবা"></div>
+    <div class="field"><label>মূল্য (প্রদর্শিত টেক্সট, ঐচ্ছিক)</label><input id="scPrice" value="${esc(c.price||"")}" placeholder="যেমন: ৳৩০০ থেকে"></div>
+    <div class="field"><label>ছাড়ের পর মূল্য (ঐচ্ছিক — দিলে উপরের মূল্যে কাটাকাটি দাগ পড়বে)</label><input id="scDiscountPrice" value="${esc(c.discountPrice||"")}" placeholder="যেমন: ৳২৪০"></div>
+    <div class="field"><label>ডিসকাউন্ট ট্যাগ (ঐচ্ছিক)</label><input id="scDiscount" value="${esc(c.discount||"")}" placeholder="যেমন: ২০% ছাড়"></div>
+    <div class="field"><label>বিবরণ (ঐচ্ছিক — দিলে কার্ডে "বিস্তারিত" বাটন দেখাবে)</label><textarea id="scDesc">${esc(c.desc||"")}</textarea></div>
+    ${c.image?`<div style="margin-bottom:14px;display:flex;align-items:center;gap:14px;">
+      <img src="${c.image}" alt="বর্তমান ছবি" style="width:56px;height:56px;object-fit:contain;border-radius:8px;border:1px solid var(--line);background:var(--paper);">
+      <button class="btn btn-danger btn-sm" onclick="removeSpecialCardImage()">ছবি মুছুন</button>
+    </div>`:""}
+    <div class="field"><label>আইকন/ছবি (ঐচ্ছিক — শিরোনামের পাশে ছোট আইকন হিসেবে দেখানো হবে)</label><input type="file" id="scImageFile" accept="image/*"></div>
+    <div class="field"><label>লিংক (ঐচ্ছিক — দিলে "অর্ডার করুন" ক্লিকে এই লিংক নতুন ট্যাবে খুলবে; ফাঁকা রাখলে ক্লিকে ম্যানুয়াল অর্ডার ফর্ম খুলবে)</label><input id="scLink" value="${esc(c.link||"")}" placeholder="https://..."></div>
+    <button class="btn btn-primary btn-wide" onclick='saveSpecialCard("${id||""}")'>সংরক্ষণ করুন</button>
+  `);
+  window.__scPendingImage = c.image||"";
+}
+window.removeSpecialCardImage=function(){ window.__scPendingImage=""; toast("সংরক্ষণ করলে ছবি মুছে যাবে"); };
+window.saveSpecialCard=async function(id){
+  const title=$("scTitle").value.trim(), link=$("scLink").value.trim();
+  const price=$("scPrice").value.trim(), discountPrice=$("scDiscountPrice").value.trim();
+  const discount=$("scDiscount").value.trim(), desc=$("scDesc").value.trim();
+  if(!title) return toast("নাম দিন");
+  try{
+    let image=window.__scPendingImage||"";
+    const file=$("scImageFile").files[0];
+    if(file) image=await resizeImageToDataURL(file,160);
+    const key=id||push(ref(db,"dorkhast/site/specialCards")).key;
+    const sort=id?(D.site.specialCards[id].sort||0):(Date.now());
+    await set(ref(db,"dorkhast/site/specialCards/"+key), {title, link, image, price, discountPrice, discount, desc, sort});
+    closeModal(); toast("কার্ড সংরক্ষণ হয়েছে ✓");
+  }catch(e){ toast("সংরক্ষণ ব্যর্থ: "+e.message); }
+};
+
 window.deleteEntry=async function(kind,id){
   if(!confirm("এটি মুছে ফেলবেন?")) return;
   try{
@@ -1292,9 +1367,10 @@ function recordDetailView(id){
   </div>
   <div class="card">
     ${customers.length?customers.map(([cid,c])=>`<div class="list-item">
-      <div class="info"><h4>${esc(c.name)}</h4><p><strong>${esc(c.customerId||"ID নেই")}</strong> · 📞 ${esc(c.phone)}</p></div>
+      <div class="info"><h4>${esc(c.name)}</h4><p><strong>${esc(c.customerId||"ID নেই")}</strong> · 📞 ${esc(c.phone)}${D.site?.customers?.[c.customerId]?.passwordHash?' · 🔒 পাসওয়ার্ড সেট':''}</p></div>
       <div class="list-actions">
         <a class="wa-icon" href="${esc(waLink(c.phone))}" target="_blank" title="WhatsApp এ মেসেজ করুন">${WA_ICON_SVG}</a>
+        ${c.customerId?`<button class="btn btn-soft btn-sm" onclick='resetCustomerPassword("${c.customerId}")'>পাসওয়ার্ড রিসেট</button>`:""}
         <button class="btn btn-danger btn-sm" onclick='deleteRecordCustomer("${id}","${cid}")'>মুছুন</button>
       </div>
     </div>`).join(""):`<div class="empty">এখনও কোনো কাস্টমার যুক্ত করা হয়নি।</div>`}
@@ -1326,6 +1402,18 @@ window.deleteRecordCustomer=async function(sectionId, custId){
     await remove(ref(db,"dorkhast/site/customerRecords/"+sectionId+"/customers/"+custId));
     toast("মুছে ফেলা হয়েছে");
   }catch(e){ toast("মুছতে সমস্যা: "+e.message); }
+};
+
+/* ---- customer login password reset: customer forgot their password, so the admin
+   clears it — the customer can then log in with just their phone number again and
+   set a fresh password themselves from their profile ---- */
+window.resetCustomerPassword=async function(customerId){
+  if(!customerId) return toast("এই কাস্টমারের Customer ID নেই, পাসওয়ার্ড রিসেট করা যাবে না");
+  if(!confirm("এই কাস্টমারের পাসওয়ার্ড মুছে ফেলে লগইন পাসওয়ার্ড-মুক্ত করে দেবেন? কাস্টমার পরে নিজের প্রোফাইল থেকে নতুন পাসওয়ার্ড সেট করতে পারবেন।")) return;
+  try{
+    await update(ref(db,"dorkhast/site/customers/"+customerId), {passwordHash:null});
+    toast("✓ পাসওয়ার্ড রিসেট হয়েছে — কাস্টমার এখন পাসওয়ার্ড ছাড়াই লগইন করতে পারবেন");
+  }catch(e){ toast("ব্যর্থ: "+e.message); }
 };
 
 /* ---- bulk WhatsApp message: one click attempts to open a prefilled chat per customer
