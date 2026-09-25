@@ -1044,7 +1044,7 @@ function servicesView(){
   <p style="font-size:13px;color:var(--ink-soft);margin:-8px 0 16px;">ওয়েবসাইটে সেবাগুলো ট্যাব আকারে দেখানো হয় — নিচের ↑ ↓ বাটন দিয়ে ট্যাবের ক্রম (অবস্থান) ইচ্ছামতো পরিবর্তন করতে পারবেন।</p>
   <div class="card">
     ${items.length?items.map(([id,s],i)=>`<div class="list-item">
-      <div class="info"><h4>${i+1}. ${esc(s.title)} — <span style="color:var(--gold)">${esc(s.price)}</span></h4>
+      <div class="info"><h4>${i+1}. ${esc(s.title)} — ${s.discountPrice?`<span style="color:var(--ink-soft);text-decoration:line-through;">${esc(s.price)}</span> <span style="color:var(--gold)">${esc(s.discountPrice)}</span>`:`<span style="color:var(--gold)">${esc(s.price)}</span>`}${s.discount?` <span style="color:#e0342b">🏷 ${esc(s.discount)}</span>`:""}</h4>
         ${s.desc?`<p>${esc(s.desc)}</p>`:""}</div>
       <div class="list-actions">
         <button class="btn btn-soft btn-sm" title="উপরে সরান" ${i===0?"disabled":""} onclick='moveService("${id}",-1)'>↑</button>
@@ -1076,17 +1076,19 @@ function serviceModal(id, s){
   modal(id?"সেবা সম্পাদনা":"নতুন সেবা", `
     <div class="field"><label>নাম</label><input id="svTitle" value="${esc(s.title||"")}" placeholder="যেমন: সিভি তৈরি ও সংশোধন"></div>
     <div class="field"><label>মূল্য (প্রদর্শিত টেক্সট)</label><input id="svPrice" value="${esc(s.price||"")}" placeholder="যেমন: ৳৩০০ থেকে"></div>
+    <div class="field"><label>ছাড়ের পর মূল্য (ঐচ্ছিক — দিলে উপরের মূল্যে কাটাকাটি দাগ পড়বে)</label><input id="svDiscountPrice" value="${esc(s.discountPrice||"")}" placeholder="যেমন: ৳২৪০"></div>
+    <div class="field"><label>ডিসকাউন্ট ট্যাগ (ঐচ্ছিক)</label><input id="svDiscount" value="${esc(s.discount||"")}" placeholder="যেমন: ২০% ছাড়"></div>
     <div class="field"><label>বিবরণ</label><textarea id="svDesc">${esc(s.desc||"")}</textarea></div>
     <button class="btn btn-primary btn-wide" onclick='saveService("${id||""}")'>সংরক্ষণ করুন</button>
   `);
 }
 window.saveService=async function(id){
-  const title=$("svTitle").value.trim(), price=$("svPrice").value.trim(), desc=$("svDesc").value.trim();
+  const title=$("svTitle").value.trim(), price=$("svPrice").value.trim(), desc=$("svDesc").value.trim(), discount=$("svDiscount").value.trim(), discountPrice=$("svDiscountPrice").value.trim();
   if(!title||!price) return toast("নাম ও মূল্য দিন");
   try{
     const key=id||push(ref(db,"dorkhast/site/services")).key;
     const sort=id?(D.site.services[id].sort||0):(Date.now());
-    await set(ref(db,"dorkhast/site/services/"+key), {title, price, desc, sort});
+    await set(ref(db,"dorkhast/site/services/"+key), {title, price, desc, discount, discountPrice, sort});
     closeModal(); toast("সেবা সংরক্ষণ হয়েছে ✓");
   }catch(e){ toast("সংরক্ষণ ব্যর্থ: "+e.message); }
 };
