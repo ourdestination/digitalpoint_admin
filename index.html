@@ -307,6 +307,15 @@ const AUTH_DOMAIN_SUFFIX = "@dorkhast.local";
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getDatabase(app);
+const MAX_DELIVERY_FILE_SIZE = 1*1024*1024; // 1MB
+function readFileAsDataURL(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(reader.result);
+    reader.onerror=()=>reject(new Error("FILE_READ_FAILED"));
+    reader.readAsDataURL(file);
+  });
+}
 
 const $=x=>document.getElementById(x);
 const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
@@ -683,6 +692,70 @@ window.filterOrders=function(){
   $("ordersList").innerHTML = all.length?all.map(orderRow).join(""):`<div class="empty">কোনো অর্ডার পাওয়া যায়নি।</div>`;
 };
 
+function humanFileSize(bytes){
+  bytes = Number(bytes||0);
+  if(bytes<1024) return bytes+" B";
+  if(bytes<1024*1024) return (bytes/1024).toFixed(1)+" KB";
+  return (bytes/1024/1024).toFixed(2)+" MB";
+}
+function deliveryFilesAdminHTML(o){
+  const entries = o.deliveryFiles ? Object.entries(o.deliveryFiles) : [];
+  return `<div class="field" style="margin-top:18px;">
+    <label>ডেলিভারি ফাইল (কাস্টমার ট্র্যাক পেজ থেকে ডাউনলোড করতে পারবেন)</label>
+    ${entries.length?entries.map(([key,f])=>`<div class="detail-line">
+      <span>📎 ${esc(f.name)} <small style="color:var(--ink-soft);">(${humanFileSize(f.size)})</small></span>
+      <span style="display:flex;gap:8px;">
+        <a class="btn btn-soft btn-sm" href="${esc(f.url)}" target="_blank" rel="noopener" download="${esc(f.name)}">দেখুন</a>
+        <button class="btn btn-danger btn-sm" onclick='deleteDeliveryFile("${esc(o.orderId)}","${esc(o.phone)}","${key}")'>মুছুন</button>
+      </span>
+    </div>`).join(""):`<div class="empty" style="padding:10px 0;">এখনও কোনো ডেলিভারি ফাইল যুক্ত করা হয়নি।</div>`}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+      <input id="deliveryFileInput" type="file" style="flex:1;min-width:180px;">
+      <button class="btn btn-primary btn-sm" id="deliveryFileBtn" onclick='saveDeliveryFile("${esc(o.orderId)}","${esc(o.phone)}")'>সংরক্ষণ করুন</button>
+    </div>
+    <div id="deliveryFileMsg" style="font-size:12.5px;margin-top:5px;"></div>
+  </div>`;
+}
+window.saveDeliveryFile=async function(orderId, phone){
+  const input=$("deliveryFileInput");
+  const f=input.files[0];
+  const msgEl=$("deliveryFileMsg");
+  if(!f){ msgEl.textContent="একটি ফাইল বেছে নিন।"; msgEl.style.color="var(--stamp-dark)"; return; }
+  if(f.size>MAX_DELIVERY_FILE_SIZE){ msgEl.textContent="ফাইলের আকার ১MB এর বেশি — অনুগ্রহ করে ছোট ফাইল দিন।"; msgEl.style.color="var(--stamp-dark)"; return; }
+  const btn=$("deliveryFileBtn");
+  btn.disabled=true; btn.textContent="সংরক্ষণ হচ্ছে...";
+  try{
+    const url=await readFileAsDataURL(f);
+    const key=push(ref(db,"dorkhast/orders/"+orderId+"/deliveryFiles")).key;
+    const fileData={name:f.name, url, size:f.size, uploadedAt:Date.now()};
+    const updates={};
+    updates[`dorkhast/orders/${orderId}/deliveryFiles/${key}`]=fileData;
+    updates[`dorkhast/ordersByPhone/${phone}/${orderId}/deliveryFiles/${key}`]=fileData;
+    await update(ref(db), updates);
+    toast("ফাইল সংরক্ষণ হয়েছে ✓");
+    openOrder(orderId);
+  }catch(e){
+    console.error(e);
+    msgEl.textContent="সংরক্ষণ ব্যর্থ: "+e.message;
+    msgEl.style.color="var(--stamp-dark)";
+    btn.disabled=false; btn.textContent="সংরক্ষণ করুন";
+  }
+};
+window.deleteDeliveryFile=async function(orderId, phone, key){
+  if(!confirm("এই ডেলিভারি ফাইলটি মুছে ফেলবেন? কাস্টমার আর এটি ডাউনলোড করতে পারবেন না।")) return;
+  try{
+    const updates={};
+    updates[`dorkhast/orders/${orderId}/deliveryFiles/${key}`]=null;
+    updates[`dorkhast/ordersByPhone/${phone}/${orderId}/deliveryFiles/${key}`]=null;
+    await update(ref(db), updates);
+    toast("মুছে ফেলা হয়েছে");
+    openOrder(orderId);
+  }catch(e){
+    console.error(e);
+    toast("মুছতে সমস্যা: "+e.message);
+  }
+};
+
 window.openOrder=function(orderId){
   const o=D.orders[orderId];
   if(!o) return;
@@ -694,6 +767,8 @@ window.openOrder=function(orderId){
     ${o.promoCode?`<div class="detail-line"><span>প্রোমো কোড</span><span>${esc(o.promoCode)}</span></div>`:""}
     <div class="detail-line"><span>জমার সময়</span><span>${fmt(o.createdAt)}</span></div>
     ${o.details?`<div class="detail-notes">${esc(o.details)}</div>`:""}
+    ${o.customerFile?`<div class="detail-line"><span>কাস্টমারের সংযুক্ত ফাইল</span><span>📎 ${esc(o.customerFile.name)} (${humanFileSize(o.customerFile.size)}) <a class="btn btn-soft btn-sm" href="${esc(o.customerFile.url)}" target="_blank" rel="noopener" download="${esc(o.customerFile.name)}">ডাউনলোড</a></span></div>`:""}
+    ${deliveryFilesAdminHTML(o)}
 
     ${o.paymentInfo?`
     <div class="detail-line"><span>পেমেন্ট মাধ্যম</span><span>${esc(PAYMENT_LABEL[o.paymentInfo.method]||o.paymentInfo.method)}</span></div>
