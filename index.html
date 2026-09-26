@@ -155,6 +155,8 @@
   .list-item .info h4{font-size:15.5px;}
   .list-item .info p{margin:4px 0 0;font-size:13.5px;color:var(--ink-soft);}
   .list-actions{display:flex;gap:8px;flex-shrink:0;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media (max-width:520px){ .row2{grid-template-columns:1fr;gap:0;} }
 
   /* live chat (admin side) */
   .chat-row{cursor:pointer;}
@@ -273,6 +275,7 @@
       <button data-tab="notices">নোটিশ বোর্ড</button>
       <button data-tab="reviews">কাস্টমার রিভিউ</button>
       <button data-tab="records">কাস্টমার রেকর্ড</button>
+      <button data-tab="promos">প্রোমো কোড</button>
       <button data-tab="site">ওয়েবসাইট তথ্য</button>
       <button data-tab="admins">অ্যাডমিন অ্যাকাউন্ট</button>
     </aside>
@@ -585,6 +588,7 @@ function render(tab){
   else if(tab==="notices") m.innerHTML=noticesView();
   else if(tab==="reviews") m.innerHTML=reviewsView();
   else if(tab==="records") m.innerHTML=recordsView();
+  else if(tab==="promos") m.innerHTML=promosView();
   else if(tab==="site") m.innerHTML=siteView();
   else if(tab==="admins") m.innerHTML=adminsView();
 }
@@ -640,7 +644,7 @@ function orderRow(o){
   return `<div class="order-row">
     <div>
       <h4>${esc(o.name)} &nbsp;·&nbsp; ${esc(o.service)}</h4>
-      <div class="meta">📞 ${esc(o.phone)} <a class="wa-icon" href="${esc(waLink(o.phone))}" title="Whatsapp এ মেসেজ করুন" onclick="event.stopPropagation()">${WA_ICON_SVG}</a> &nbsp;·&nbsp; DKH-${esc(o.orderId.slice(-6).toUpperCase())} &nbsp;·&nbsp; ${fmt(o.createdAt)}</div>
+      <div class="meta">📞 ${esc(o.phone)} <a class="wa-icon" href="${esc(waLink(o.phone))}" title="Whatsapp এ মেসেজ করুন" onclick="event.stopPropagation()">${WA_ICON_SVG}</a> &nbsp;·&nbsp; ${o.customerId?`আইডি: ${esc(o.customerId)} &nbsp;·&nbsp; `:""}DKH-${esc(o.orderId.slice(-6).toUpperCase())} &nbsp;·&nbsp; ${fmt(o.createdAt)}</div>
     </div>
     <span class="badge badge-${esc(o.status)}">${esc(STATUS_LABEL[o.status]||o.status)}</span>
     <div class="row-actions">
@@ -664,7 +668,7 @@ function ordersView(){
       <option value="delivered">ডেলিভারি সম্পন্ন</option>
       <option value="cancelled">বাতিল</option>
     </select>
-    <input id="searchOrders" placeholder="নাম বা মোবাইল নম্বর দিয়ে খুঁজুন" oninput="filterOrders()">
+    <input id="searchOrders" placeholder="নাম, মোবাইল নম্বর বা কাস্টমার আইডি দিয়ে খুঁজুন" oninput="filterOrders()">
   </div>
   <div class="card" id="ordersList">
     ${all.length?all.map(orderRow).join(""):`<div class="empty">এখনও কোনো অর্ডার আসেনি।</div>`}
@@ -675,7 +679,7 @@ window.filterOrders=function(){
   const q=$("searchOrders").value.trim().toLowerCase();
   let all=Object.values(D.orders).sort((a,b)=>b.createdAt-a.createdAt);
   if(status) all=all.filter(o=>o.status===status);
-  if(q) all=all.filter(o=>(o.name||"").toLowerCase().includes(q)||(o.phone||"").includes(q));
+  if(q) all=all.filter(o=>(o.name||"").toLowerCase().includes(q)||(o.phone||"").includes(q)||(o.customerId||"").toLowerCase().includes(q));
   $("ordersList").innerHTML = all.length?all.map(orderRow).join(""):`<div class="empty">কোনো অর্ডার পাওয়া যায়নি।</div>`;
 };
 
@@ -687,6 +691,7 @@ window.openOrder=function(orderId){
     <div class="detail-line"><span>নাম</span><span>${esc(o.name)}</span></div>
     <div class="detail-line"><span>মোবাইল নম্বর</span><span>${esc(o.phone)} <a class="wa-icon" href="${esc(waLink(o.phone))}" title="Whatsapp এ মেসেজ করুন">${WA_ICON_SVG}</a></span></div>
     <div class="detail-line"><span>সেবা</span><span>${esc(o.service)}</span></div>
+    ${o.promoCode?`<div class="detail-line"><span>প্রোমো কোড</span><span>${esc(o.promoCode)}</span></div>`:""}
     <div class="detail-line"><span>জমার সময়</span><span>${fmt(o.createdAt)}</span></div>
     ${o.details?`<div class="detail-notes">${esc(o.details)}</div>`:""}
 
@@ -796,9 +801,27 @@ window.verifyPayment=async function(orderId){
 };
 
 /* ---- ATM-style cash memo (admin-authored bill — never auto-generated;
-       admin adds line items / extra charges and an optional discount) ---- */
+       admin adds line items / extra charges and an optional discount).
+       If the order used an (active) promo code, that code's discount is
+       automatically applied here so the admin doesn't have to calculate
+       percentages by hand — this is also what makes percentage-based
+       promoter commission possible, since commission is computed against
+       this memo's final total. ---- */
 function memoIdLabel(o){ return "DKH-"+o.orderId.slice(-6).toUpperCase(); }
-let memoDraft=null; // {orderId, items:[{label,amount}], discount, note}
+let memoDraft=null; // {orderId, items:[{label,amount}], discount, note, promoCode}
+
+function computePromoDiscount(promo, subtotal){
+  if(!promo) return 0;
+  if(promo.discountType==="percent") return Math.round(subtotal * (Number(promo.discountValue)||0) / 100);
+  return Number(promo.discountValue)||0;
+}
+window.reapplyPromoDiscount=function(){
+  readMemoDraftFromForm();
+  const promo = memoDraft.promoCode ? D.site?.promoCodes?.[memoDraft.promoCode] : null;
+  if(!promo) return;
+  memoDraft.discount = computePromoDiscount(promo, memoSubtotal());
+  renderMemoEditor();
+};
 
 function readMemoDraftFromForm(){
   if(!memoDraft) return;
@@ -815,18 +838,23 @@ function memoSubtotal(){
 window.addMemoItem=function(){
   readMemoDraftFromForm();
   memoDraft.items.push({label:"", amount:0});
+  const promo = memoDraft.promoCode ? D.site?.promoCodes?.[memoDraft.promoCode] : null;
+  if(promo) memoDraft.discount = computePromoDiscount(promo, memoSubtotal());
   renderMemoEditor();
 };
 window.removeMemoItem=function(idx){
   readMemoDraftFromForm();
   memoDraft.items.splice(idx,1);
   if(!memoDraft.items.length) memoDraft.items.push({label:"", amount:0});
+  const promo = memoDraft.promoCode ? D.site?.promoCodes?.[memoDraft.promoCode] : null;
+  if(promo) memoDraft.discount = computePromoDiscount(promo, memoSubtotal());
   renderMemoEditor();
 };
 function renderMemoEditor(){
   const subtotal=memoSubtotal();
   const discount=Number(memoDraft.discount)||0;
   const total=Math.max(0, subtotal-discount);
+  const promo = memoDraft.promoCode ? D.site?.promoCodes?.[memoDraft.promoCode] : null;
   modal("ক্যাশ মেমো তৈরি করুন", `
     <p style="font-size:13px;color:var(--ink-soft);margin:-4px 0 14px;">সেবার মূল্য, বাড়তি চার্জ ও ছাড় যোগ করে কাস্টমারের জন্য একটি বিল তৈরি করুন। সংরক্ষণ না করা পর্যন্ত কাস্টমার কোনো মেমো দেখতে পাবেন না।</p>
     <div id="memoItemsList">
@@ -839,7 +867,13 @@ function renderMemoEditor(){
       `).join("")}
     </div>
     <button type="button" class="btn btn-soft btn-sm" onclick="addMemoItem()" style="margin-bottom:18px;">＋ আইটেম যোগ করুন</button>
-    <div class="field"><label>ছাড় (৳, ঐচ্ছিক)</label><input id="memoDiscount" type="number" value="${discount||0}"></div>
+    <div class="field">
+      <label>ছাড় (৳, ঐচ্ছিক)${promo?` — <span style="font-weight:400;color:var(--green);">প্রোমো কোড "${esc(memoDraft.promoCode)}" থেকে অটো-প্রযুক্ত (${promo.discountType==="percent"?Number(promo.discountValue)+"%":"৳"+Number(promo.discountValue)})</span>`:""}</label>
+      <div style="display:flex;gap:8px;">
+        <input id="memoDiscount" type="number" value="${discount||0}" style="flex:1;">
+        ${promo?`<button type="button" class="btn btn-ghost btn-sm" onclick="reapplyPromoDiscount()">পুনরায় হিসাব</button>`:""}
+      </div>
+    </div>
     <div class="field"><label>নোট (ঐচ্ছিক, বিলে দেখানো হবে)</label><textarea id="memoNote">${esc(memoDraft.note||"")}</textarea></div>
     <div class="detail-line" style="font-size:15px;"><span>সাবটোটাল</span><span>৳${subtotal}</span></div>
     ${discount?`<div class="detail-line" style="font-size:15px;"><span>ছাড়</span><span>−৳${discount}</span></div>`:""}
@@ -851,9 +885,13 @@ window.openMemoEditor=function(orderId){
   const o=D.orders[orderId];
   if(!o) return;
   if(o.memo && o.memo.items && o.memo.items.length){
-    memoDraft={orderId, items:o.memo.items.map(it=>({label:it.label,amount:it.amount})), discount:o.memo.discount||0, note:o.memo.note||""};
+    memoDraft={orderId, items:o.memo.items.map(it=>({label:it.label,amount:it.amount})), discount:o.memo.discount||0, note:o.memo.note||"", promoCode:o.memo.promoCode||null};
   }else{
-    memoDraft={orderId, items:[{label:o.service, amount:(o.paymentInfo&&o.paymentInfo.amount)||0}], discount:0, note:""};
+    const items=[{label:o.service, amount:(o.paymentInfo&&o.paymentInfo.amount)||0}];
+    const subtotal=items.reduce((s,it)=>s+(Number(it.amount)||0),0);
+    const promo = o.promoCode ? D.site?.promoCodes?.[o.promoCode] : null;
+    const promoActive = promo && promo.active!==false;
+    memoDraft={orderId, items, discount: promoActive?computePromoDiscount(promo,subtotal):0, note:"", promoCode: promoActive?o.promoCode:null};
   }
   renderMemoEditor();
 };
@@ -870,6 +908,7 @@ window.saveMemo=async function(){
   const memo={
     items, discount, note:(memoDraft.note||"").trim(),
     subtotal, total,
+    ...(memoDraft.promoCode?{promoCode:memoDraft.promoCode}:{}),
     generatedAt: (o.memo&&o.memo.generatedAt) || Date.now(),
     updatedAt: Date.now()
   };
@@ -917,7 +956,7 @@ function memoWaText(o){
   (m.items||[]).forEach(it=>{ rows.push((it.label||"আইটেম")+" : ৳"+(it.amount||0)); });
   rows.push(sline);
   rows.push("সাবটোটাল   : ৳"+m.subtotal);
-  if(m.discount) rows.push("ছাড়        : −৳"+m.discount);
+  if(m.discount) rows.push("ছাড়"+(m.promoCode?" ("+m.promoCode+")":"")+"        : −৳"+m.discount);
   rows.push("সর্বমোট     : ৳"+m.total);
   rows.push(sline);
   rows.push("পেমেন্ট মাধ্যম: বিকাশ (সেন্ডমানি/ক্যাশইন) - 01518411872");
@@ -956,7 +995,7 @@ window.showMemoView=function(orderId){
         ${(m.items||[]).map(it=>`<div class="atm-memo-row"><span>${esc(it.label||"আইটেম")}</span><b>৳${esc(it.amount||0)}</b></div>`).join("")}
         <div class="atm-memo-divider dashed"></div>
         <div class="atm-memo-row"><span>সাবটোটাল</span><b>৳${m.subtotal}</b></div>
-        ${m.discount?`<div class="atm-memo-row"><span>ছাড়</span><b>−৳${m.discount}</b></div>`:""}
+        ${m.discount?`<div class="atm-memo-row"><span>ছাড়${m.promoCode?" ("+esc(m.promoCode)+")":""}</span><b>−৳${m.discount}</b></div>`:""}
         <div class="atm-memo-row atm-memo-amount"><span>সর্বমোট প্রদেয়</span><b>৳${m.total}</b></div>
         <div class="atm-memo-divider dashed"></div>
         <div class="atm-memo-row" style="display:block;"><span>পেমেন্ট মাধ্যম: বিকাশ (সেন্ডমানি/ক্যাশইন) - 01518411872</span></div>
@@ -1281,6 +1320,7 @@ function reviewsView(){
 
 /* ---- customer records (grouped by service type, with one-click bulk WhatsApp messaging) ---- */
 let activeRecordSection=null;
+let activePromoCode=null;
 
 /* ---- Customer ID helper: DP001, DP002, DP003 ... ---- */
 async function nextAdminCustomerId(){
@@ -1709,6 +1749,199 @@ window.loadDefaults=async function(){
     });
     toast("ডিফল্ট মান লোড হয়েছে ✓");
   }catch(e){ toast("ব্যর্থ: "+e.message); }
+};
+
+/* ---- promo codes / promoters: each code carries a customer-facing discount and a
+   promoter (referrer) commission. Commission is computed against a delivered order's
+   memo total (if the admin issued a memo) or verified payment amount, whichever is
+   available — flat commissions ignore the order amount entirely. ---- */
+function computePromoCommission(promo, order){
+  const amount = Number((order.memo && order.memo.total) || (order.paymentInfo && order.paymentInfo.amount) || 0);
+  if(promo.commissionType==="percent") return Math.round(amount * (Number(promo.commissionValue)||0) / 100);
+  return Number(promo.commissionValue)||0;
+}
+function promoOrders(code){
+  return Object.values(D.orders).filter(o=>o.promoCode===code && o.status==="delivered").sort((a,b)=>b.createdAt-a.createdAt);
+}
+function promosView(){
+  if(activePromoCode && !D.site?.promoCodes?.[activePromoCode]) activePromoCode=null;
+  if(activePromoCode) return promoProfileView(activePromoCode);
+  const promos=Object.entries(D.site?.promoCodes||{}).sort((a,b)=>(b[1].createdAt||0)-(a[1].createdAt||0));
+  return `
+  <div class="section-head"><h2>প্রোমো কোড</h2><button class="btn btn-primary btn-sm" onclick="addPromoModal()">＋ নতুন প্রোমো কোড</button></div>
+  <p style="font-size:13px;color:var(--ink-soft);margin:-8px 0 16px;">প্রতিটি প্রোমো কোডের সাথে একজন প্রোমোটার (রেফারার), কাস্টমারের জন্য একটি ছাড় ও প্রোমোটারের জন্য একটি কমিশন যুক্ত থাকে। ওয়েবসাইটের অর্ডার ফর্মে কোডটি লিখলে কাস্টমার শুধু ছাড়ের পরিমাণ দেখতে পাবেন — কোনো হিসাব স্বয়ংক্রিয়ভাবে বিয়োগ হয় না।</p>
+  <div class="card">
+    ${promos.length?promos.map(([code,p])=>{
+      const orders=promoOrders(code);
+      const earned=orders.reduce((s,o)=>s+computePromoCommission(p,o),0);
+      const paid=Object.values(p.payments||{}).reduce((s,x)=>s+Number(x.amount||0),0);
+      const due=earned-paid;
+      const discountText=p.discountType==="percent"?(Number(p.discountValue)+"%"):("৳"+Number(p.discountValue));
+      const commText=p.commissionType==="percent"?(Number(p.commissionValue)+"%"):("৳"+Number(p.commissionValue));
+      return `<div class="list-item">
+        <div class="info"><h4>${esc(code)} ${p.active===false?'<span class="badge badge-cancelled" style="font-size:10.5px;">নিষ্ক্রিয়</span>':''}</h4>
+        <p>${esc(p.promoterName||"-")} · 📞 ${esc(p.promoterPhone||"-")} &nbsp;·&nbsp; ছাড়: ${discountText} &nbsp;·&nbsp; কমিশন: ${commText} &nbsp;·&nbsp; ডেলিভারি অর্ডার: ${orders.length} &nbsp;·&nbsp; বকেয়া: <b style="color:${due>0?"var(--stamp-dark)":"var(--green)"}">৳${due}</b></p></div>
+        <div class="list-actions">
+          <button class="btn btn-soft btn-sm" onclick='openPromoProfile("${esc(code)}")'>প্রোফাইল দেখুন</button>
+          <button class="btn btn-danger btn-sm" onclick='deletePromo("${esc(code)}")'>মুছুন</button>
+        </div>
+      </div>`;
+    }).join(""):`<div class="empty">এখনও কোনো প্রোমো কোড তৈরি করা হয়নি।</div>`}
+  </div>`;
+}
+window.openPromoProfile=function(code){ activePromoCode=code; render("promos"); };
+window.backToPromos=function(){ activePromoCode=null; render("promos"); };
+
+window.addPromoModal=function(){
+  modal("নতুন প্রোমো কোড", `
+    <div class="field"><label>প্রোমোটারের নাম</label><input id="pmName" placeholder="যেমন: রাকিব"></div>
+    <div class="field"><label>প্রোমোটারের মোবাইল নম্বর</label><input id="pmPhone" placeholder="01XXXXXXXXX"></div>
+    <div class="field"><label>প্রোমো কোড</label><input id="pmCode" placeholder="যেমন: SUMMER10" style="text-transform:uppercase;"></div>
+    <div class="row2">
+      <div class="field"><label>ছাড়ের ধরণ (কাস্টমারের জন্য)</label>
+        <select id="pmDiscType"><option value="percent">শতকরা (%)</option><option value="flat">নির্দিষ্ট টাকা (৳)</option></select>
+      </div>
+      <div class="field"><label>ছাড়ের পরিমাণ</label><input id="pmDiscVal" type="number" placeholder="যেমন: 10"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>কমিশনের ধরণ (প্রোমোটারের জন্য)</label>
+        <select id="pmCommType"><option value="percent">শতকরা (%)</option><option value="flat">নির্দিষ্ট টাকা (৳)</option></select>
+      </div>
+      <div class="field"><label>কমিশনের পরিমাণ</label><input id="pmCommVal" type="number" placeholder="যেমন: 50"></div>
+    </div>
+    <button class="btn btn-primary btn-wide" onclick="savePromo()">তৈরি করুন</button>
+  `);
+};
+window.savePromo=async function(){
+  const name=$("pmName").value.trim();
+  const phone=$("pmPhone").value.trim();
+  const code=$("pmCode").value.trim().toUpperCase();
+  const discountType=$("pmDiscType").value;
+  const discountValue=Number($("pmDiscVal").value)||0;
+  const commissionType=$("pmCommType").value;
+  const commissionValue=Number($("pmCommVal").value)||0;
+  if(!name||!phone) return toast("প্রোমোটারের নাম ও মোবাইল নম্বর দিন");
+  if(!/^[A-Z0-9]{3,20}$/.test(code)) return toast("প্রোমো কোড ইংরেজি অক্ষর/সংখ্যা দিয়ে দিন (৩-২০ অক্ষর)");
+  if(D.site?.promoCodes?.[code]) return toast("এই প্রোমো কোডটি আগে থেকেই আছে");
+  try{
+    await set(ref(db,"dorkhast/site/promoCodes/"+code), {
+      code, promoterName:name, promoterPhone:phone, discountType, discountValue, commissionType, commissionValue,
+      active:true, createdAt:Date.now()
+    });
+    closeModal(); toast("প্রোমো কোড তৈরি হয়েছে ✓");
+  }catch(e){ toast("ব্যর্থ: "+e.message); }
+};
+
+window.editPromoModal=function(code){
+  const p=D.site?.promoCodes?.[code]; if(!p) return;
+  modal("প্রোমো কোড এডিট করুন — "+code, `
+    <div class="field"><label>প্রোমোটারের নাম</label><input id="pmName" value="${esc(p.promoterName||"")}"></div>
+    <div class="field"><label>প্রোমোটারের মোবাইল নম্বর</label><input id="pmPhone" value="${esc(p.promoterPhone||"")}"></div>
+    <div class="row2">
+      <div class="field"><label>ছাড়ের ধরণ</label>
+        <select id="pmDiscType"><option value="percent" ${p.discountType==="percent"?"selected":""}>শতকরা (%)</option><option value="flat" ${p.discountType==="flat"?"selected":""}>নির্দিষ্ট টাকা (৳)</option></select>
+      </div>
+      <div class="field"><label>ছাড়ের পরিমাণ</label><input id="pmDiscVal" type="number" value="${Number(p.discountValue)||0}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>কমিশনের ধরণ</label>
+        <select id="pmCommType"><option value="percent" ${p.commissionType==="percent"?"selected":""}>শতকরা (%)</option><option value="flat" ${p.commissionType==="flat"?"selected":""}>নির্দিষ্ট টাকা (৳)</option></select>
+      </div>
+      <div class="field"><label>কমিশনের পরিমাণ</label><input id="pmCommVal" type="number" value="${Number(p.commissionValue)||0}"></div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;margin:10px 0;font-size:14px;"><input type="checkbox" id="pmActive" ${p.active===false?"":"checked"} style="width:auto;"> সক্রিয় (অ্যাক্টিভ)</label>
+    <button class="btn btn-primary btn-wide" onclick='updatePromo("${esc(code)}")'>সংরক্ষণ করুন</button>
+  `);
+};
+window.updatePromo=async function(code){
+  const name=$("pmName").value.trim();
+  const phone=$("pmPhone").value.trim();
+  if(!name||!phone) return toast("প্রোমোটারের নাম ও মোবাইল নম্বর দিন");
+  try{
+    await update(ref(db,"dorkhast/site/promoCodes/"+code), {
+      promoterName:name, promoterPhone:phone,
+      discountType:$("pmDiscType").value, discountValue:Number($("pmDiscVal").value)||0,
+      commissionType:$("pmCommType").value, commissionValue:Number($("pmCommVal").value)||0,
+      active:$("pmActive").checked
+    });
+    closeModal(); toast("সংরক্ষণ হয়েছে ✓");
+  }catch(e){ toast("ব্যর্থ: "+e.message); }
+};
+window.deletePromo=async function(code){
+  if(!confirm("এই প্রোমো কোডটি স্থায়ীভাবে মুছে যাবে (পুরনো অর্ডারে কোডের নাম থেকে যাবে, কিন্তু প্রোমোটারের হিসাব আর দেখা যাবে না)। আপনি কি নিশ্চিত?")) return;
+  try{
+    await remove(ref(db,"dorkhast/site/promoCodes/"+code));
+    if(activePromoCode===code) activePromoCode=null;
+    toast("মুছে ফেলা হয়েছে");
+  }catch(e){ toast("মুছতে সমস্যা: "+e.message); }
+};
+
+function promoProfileView(code){
+  const p=D.site?.promoCodes?.[code];
+  if(!p){ activePromoCode=null; return promosView(); }
+  const orders=promoOrders(code);
+  const earned=orders.reduce((s,o)=>s+computePromoCommission(p,o),0);
+  const payments=Object.entries(p.payments||{}).sort((a,b)=>(b[1].at||0)-(a[1].at||0));
+  const paid=payments.reduce((s,[,x])=>s+Number(x.amount||0),0);
+  const due=earned-paid;
+  const discountText=p.discountType==="percent"?(Number(p.discountValue)+"%"):("৳"+Number(p.discountValue));
+  const commText=p.commissionType==="percent"?(Number(p.commissionValue)+"% (অর্ডারের অংক অনুযায়ী)"):("৳"+Number(p.commissionValue)+" (প্রতি ডেলিভারি অর্ডারে)");
+  return `
+  <div class="section-head">
+    <h2>${esc(code)}</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-ghost btn-sm" onclick='backToPromos()'>← সব প্রোমো কোড</button>
+      <button class="btn btn-soft btn-sm" onclick='editPromoModal("${esc(code)}")'>এডিট করুন</button>
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:16px;">
+    <p style="margin:0 0 6px;"><b>${esc(p.promoterName||"-")}</b> &nbsp;·&nbsp; 📞 ${esc(p.promoterPhone||"-")}</p>
+    <p style="margin:0;font-size:13.5px;color:var(--ink-soft);">কাস্টমার ছাড়: ${discountText} &nbsp;·&nbsp; প্রোমোটার কমিশন: ${commText}${p.active===false?' &nbsp;·&nbsp; <span style="color:var(--stamp-dark);">নিষ্ক্রিয়</span>':""}</p>
+  </div>
+  <div class="stat-grid" style="margin-bottom:20px;">
+    <div class="stat-card"><b>${orders.length}</b><span>ডেলিভারি সম্পন্ন অর্ডার</span></div>
+    <div class="stat-card"><b>৳${earned}</b><span>মোট প্রাপ্য কমিশন</span></div>
+    <div class="stat-card"><b>৳${paid}</b><span>এ পর্যন্ত পরিশোধিত</span></div>
+    <div class="stat-card" style="border-top-color:${due>0?"var(--stamp-dark)":"var(--green)"};"><b style="color:${due>0?"var(--stamp-dark)":"var(--green)"};">৳${due}</b><span>বকেয়া (ডিউ)</span></div>
+  </div>
+  <div class="section-head" style="margin-bottom:10px;"><h2 style="font-size:18px;">কমিশনযোগ্য অর্ডার</h2></div>
+  <div class="card" style="margin-bottom:20px;">
+    ${orders.length?orders.map(o=>`<div class="list-item">
+      <div class="info"><h4>${esc(o.name)} &nbsp;·&nbsp; ${esc(o.service)}</h4><p>DKH-${esc(o.orderId.slice(-6).toUpperCase())} &nbsp;·&nbsp; ${fmt(o.createdAt)}</p></div>
+      <b style="color:var(--green);">৳${computePromoCommission(p,o)}</b>
+    </div>`).join(""):`<div class="empty">এখনও কোনো ডেলিভারি সম্পন্ন অর্ডার এই কোডে পাওয়া যায়নি।</div>`}
+  </div>
+  <div class="section-head" style="margin-bottom:10px;"><h2 style="font-size:18px;">পেমেন্ট ইতিহাস (প্রোমোটারকে প্রদত্ত)</h2><button class="btn btn-primary btn-sm" onclick='addPromoPaymentModal("${esc(code)}")'>＋ পেমেন্ট যোগ করুন</button></div>
+  <div class="card">
+    ${payments.length?payments.map(([pid,x])=>`<div class="list-item">
+      <div class="info"><h4>৳${Number(x.amount||0)}</h4><p>${esc(x.note||"")}${x.note?" &nbsp;·&nbsp; ":""}${fmt(x.at)}</p></div>
+      <button class="btn btn-danger btn-sm" onclick='deletePromoPayment("${esc(code)}","${pid}")'>মুছুন</button>
+    </div>`).join(""):`<div class="empty">এখনও কোনো পেমেন্ট রেকর্ড করা হয়নি।</div>`}
+  </div>`;
+}
+window.addPromoPaymentModal=function(code){
+  modal("পেমেন্ট যোগ করুন", `
+    <div class="field"><label>পরিমাণ (৳)</label><input id="ppAmount" type="number" placeholder="যেমন: 500"></div>
+    <div class="field"><label>নোট (ঐচ্ছিক)</label><input id="ppNote" placeholder="যেমন: বিকাশে পাঠানো হয়েছে"></div>
+    <button class="btn btn-primary btn-wide" onclick='savePromoPayment("${esc(code)}")'>সংরক্ষণ করুন</button>
+  `);
+};
+window.savePromoPayment=async function(code){
+  const amount=Number($("ppAmount").value)||0;
+  const note=$("ppNote").value.trim();
+  if(amount<=0) return toast("সঠিক পরিমাণ দিন");
+  try{
+    const key=push(ref(db,"dorkhast/site/promoCodes/"+code+"/payments")).key;
+    await set(ref(db,"dorkhast/site/promoCodes/"+code+"/payments/"+key), {amount, note, at:Date.now()});
+    closeModal(); toast("পেমেন্ট যোগ হয়েছে ✓");
+  }catch(e){ toast("ব্যর্থ: "+e.message); }
+};
+window.deletePromoPayment=async function(code, pid){
+  if(!confirm("এই পেমেন্ট রেকর্ডটি মুছে ফেলবেন?")) return;
+  try{
+    await remove(ref(db,"dorkhast/site/promoCodes/"+code+"/payments/"+pid));
+    toast("মুছে ফেলা হয়েছে");
+  }catch(e){ toast("মুছতে সমস্যা: "+e.message); }
 };
 
 /* ---- admins (create without disturbing the current session, via a secondary app instance) ---- */
