@@ -148,6 +148,11 @@
   .list-item .info h4{font-size:15.5px;}
   .list-item .info p{margin:4px 0 0;font-size:13.5px;color:var(--ink-soft);}
   .list-actions{display:flex;gap:8px;flex-shrink:0;}
+  .svc-card{transition:box-shadow .15s,opacity .15s;}
+  .svc-card.dragging{opacity:.4;}
+  .svc-card.drag-over{outline:2px dashed var(--gold);outline-offset:3px;}
+  .svc-drag-handle{cursor:grab;user-select:none;font-size:15px;color:var(--ink-soft);padding:2px 4px;}
+  .svc-drag-handle:active{cursor:grabbing;}
 
   @media (max-width:820px){
     .layout{grid-template-columns:1fr;}
@@ -546,6 +551,7 @@ function orderRow(o){
       <div class="meta">📞 ${esc(o.phone)} <a class="wa-icon" href="${esc(waLink(o.phone))}" title="Whatsapp এ মেসেজ করুন" onclick="event.stopPropagation()">${WA_ICON_SVG}</a> &nbsp;·&nbsp; DKH-${esc(o.orderId.slice(-6).toUpperCase())} &nbsp;·&nbsp; ${fmt(o.createdAt)}</div>
     </div>
     <span class="badge badge-${esc(o.status)}">${esc(STATUS_LABEL[o.status]||o.status)}</span>
+    ${o.deliverable?`<span title="কাজের ফাইল আপলোড করা আছে" style="font-size:15px;">📎</span>`:""}
     <div class="row-actions">
       <button class="btn btn-soft btn-sm" onclick='openOrder("${o.orderId}")'>বিস্তারিত</button>
       <button class="btn btn-soft btn-sm" onclick='openMemo("${o.orderId}")'>🧾 মেমো</button>
@@ -588,9 +594,9 @@ window.openOrder=function(orderId){
   if(!o) return;
   const hist=o.trackingHistory?Object.values(o.trackingHistory).sort((a,b)=>b.at-a.at):[];
   modal(`অর্ডার DKH-${o.orderId.slice(-6).toUpperCase()}`, `
+    <h3 style="font-size:22px;margin:0 0 14px;color:var(--ink, #1a1a1a);">${esc(o.service)}</h3>
     <div class="detail-line"><span>নাম</span><span>${esc(o.name)}</span></div>
     <div class="detail-line"><span>মোবাইল নম্বর</span><span>${esc(o.phone)} <a class="wa-icon" href="${esc(waLink(o.phone))}" title="Whatsapp এ মেসেজ করুন">${WA_ICON_SVG}</a></span></div>
-    <div class="detail-line"><span>সেবা</span><span>${esc(o.service)}</span></div>
     <div class="detail-line"><span>জমার সময়</span><span>${fmt(o.createdAt)}</span></div>
     ${o.details?`<div class="detail-notes">${esc(o.details)}</div>`:""}
 
@@ -606,9 +612,26 @@ window.openOrder=function(orderId){
 
     <div class="field" style="margin-top:18px;">
       <label>স্ট্যাটাস পরিবর্তন করুন</label>
-      <select id="newStatus">
+      <select id="newStatus" onchange="toggleDeliverableWrap()">
         ${Object.entries(STATUS_LABEL).map(([k,v])=>`<option value="${k}" ${o.status===k?"selected":""}>${v}</option>`).join("")}
       </select>
+    </div>
+    <div id="deliverableWrap" style="display:${(o.status==="ready"||o.status==="delivered")?"block":"none"};margin:14px 0;padding:14px;border:1px dashed var(--line);border-radius:8px;background:var(--paper-soft, rgba(0,0,0,0.02));">
+      <label style="font-weight:600;display:block;margin-bottom:6px;">📎 কাজের ফাইল আপলোড করুন</label>
+      <p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 10px;">এই ফাইলটি সংরক্ষণ করা হবে Realtime Database-এ। কাস্টমারের পেমেন্ট ভেরিফাই হওয়ার আগ পর্যন্ত তিনি এটি ডাউনলোড করতে পারবেন না — ভেরিফাই হওয়ার সাথে সাথে ডাউনলোড অপশন খুলে যাবে। ফাইলের সাইজ ৫MB এর মধ্যে রাখুন।</p>
+      ${o.deliverable?`
+        <div class="detail-line"><span>বর্তমান ফাইল</span><span>${esc(o.deliverable.fileName||"ফাইল")}</span></div>
+        <div class="detail-line"><span>আপলোডের সময়</span><span>${fmt(o.deliverable.uploadedAt)}</span></div>
+        <div class="detail-line"><span>ডাউনলোড উন্মুক্ত কিনা</span><span>${(o.paymentInfo&&o.paymentInfo.verified)?"✓ হ্যাঁ (পেমেন্ট ভেরিফাইড)":"না (পেমেন্ট যাচাই বাকি)"}</span></div>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+          <a class="btn btn-soft btn-sm" href="${o.deliverable.dataUrl}" download="${esc(o.deliverable.fileName||"file")}">প্রিভিউ / ডাউনলোড (অ্যাডমিন)</a>
+          <button class="btn btn-danger btn-sm" onclick='removeDeliverable("${orderId}")'>ফাইল মুছুন</button>
+        </div>
+        <hr style="margin:12px 0;border:none;border-top:1px solid var(--line);">
+        <label style="font-size:13px;">নতুন ফাইল দিয়ে প্রতিস্থাপন করুন</label>
+      `:""}
+      <input type="file" id="deliverableFileInput" style="margin:8px 0;">
+      <button class="btn btn-primary btn-sm" id="deliverableUploadBtn" onclick='uploadDeliverable("${orderId}")'>ফাইল আপলোড করুন</button>
     </div>
     <div class="field">
       <label>ট্র্যাকিং নোট (কাস্টমার এটি দেখতে পাবেন)</label>
@@ -656,6 +679,62 @@ window.updateOrder=async function(orderId){
   }finally{
     btn.disabled=false; btn.textContent="আপডেট সংরক্ষণ করুন";
   }
+};
+
+window.toggleDeliverableWrap=function(){
+  const v=$("newStatus").value;
+  const wrap=$("deliverableWrap");
+  if(wrap) wrap.style.display=(v==="ready"||v==="delivered")?"block":"none";
+};
+
+const MAX_DELIVERABLE_BYTES = 5*1024*1024; // 5MB — Realtime Database is not meant for large binary blobs
+window.uploadDeliverable=async function(orderId){
+  const o=D.orders[orderId];
+  if(!o) return;
+  const input=$("deliverableFileInput");
+  const file=input && input.files && input.files[0];
+  if(!file) return toast("একটি ফাইল বাছাই করুন");
+  if(file.size>MAX_DELIVERABLE_BYTES) return toast("ফাইলের সাইজ ৫MB এর বেশি হতে পারবে না");
+  const btn=$("deliverableUploadBtn");
+  btn.disabled=true; btn.textContent="আপলোড হচ্ছে...";
+  try{
+    const dataUrl=await new Promise((res,rej)=>{
+      const r=new FileReader();
+      r.onload=()=>res(r.result);
+      r.onerror=()=>rej(new Error("ফাইল পড়তে ব্যর্থ"));
+      r.readAsDataURL(file);
+    });
+    const deliverable={fileName:file.name, fileType:file.type||"application/octet-stream", fileSize:file.size, dataUrl, uploadedAt:Date.now(), uploadedBy:(auth.currentUser&&auth.currentUser.email)||"admin"};
+    const now=Date.now();
+    const histKey=push(ref(db,"dorkhast/orders/"+orderId+"/trackingHistory")).key;
+    const histEntry={status:o.status, note:"কাজের ফাইল আপলোড করা হয়েছে। পেমেন্ট ভেরিফাই হওয়ার পর ডাউনলোড করতে পারবেন।", at:now};
+    const updates={};
+    updates[`dorkhast/orders/${orderId}/deliverable`]=deliverable;
+    updates[`dorkhast/ordersByPhone/${o.phone}/${orderId}/deliverable`]=deliverable;
+    updates[`dorkhast/orders/${orderId}/trackingHistory/${histKey}`]=histEntry;
+    updates[`dorkhast/ordersByPhone/${o.phone}/${orderId}/trackingHistory/${histKey}`]=histEntry;
+    await update(ref(db), updates);
+    toast("ফাইল আপলোড হয়েছে ✓");
+    openOrder(orderId);
+  }catch(e){
+    console.error(e);
+    toast("আপলোড ব্যর্থ: "+e.message);
+    btn.disabled=false; btn.textContent="ফাইল আপলোড করুন";
+  }
+};
+
+window.removeDeliverable=async function(orderId){
+  const o=D.orders[orderId];
+  if(!o) return;
+  if(!confirm("এই ফাইলটি মুছে ফেলবেন? কাস্টমার আর এটি ডাউনলোড করতে পারবেন না।")) return;
+  try{
+    const updates={};
+    updates[`dorkhast/orders/${orderId}/deliverable`]=null;
+    updates[`dorkhast/ordersByPhone/${o.phone}/${orderId}/deliverable`]=null;
+    await update(ref(db), updates);
+    toast("ফাইল মুছে ফেলা হয়েছে ✓");
+    openOrder(orderId);
+  }catch(e){ toast("মুছতে ব্যর্থ: "+e.message); }
 };
 
 window.deleteOrder=async function(orderId, phone){
@@ -956,12 +1035,18 @@ window.printMemo=function(){
 
 /* ---- services & pricing (merged) ---- */
 const DEFAULT_SERVICES_ADMIN = [
-  {title:"সিভি তৈরি (নতুন)", price:"৳৪০০", desc:"নতুন সিভি তৈরি, প্রফেশনাল ফরম্যাটে সাজিয়ে দেওয়া।", category:"সিভি ও কভার লেটার"},
-  {title:"সিভি সংশোধন", price:"৳৩০০", desc:"পুরনো সিভি হালনাগাদ ও উন্নত করে দেওয়া।", category:"সিভি ও কভার লেটার"},
-  {title:"কভার লেটার", price:"৳২০০", desc:"নির্দিষ্ট চাকরির বিজ্ঞপ্তি অনুযায়ী মানানসই কভার লেটার লিখে দেওয়া।", category:"সিভি ও কভার লেটার"},
-  {title:"চাকরির আবেদন পূরণ (প্রতি আবেদন)", price:"৳২৫০", desc:"সরকারি ও বেসরকারি চাকরির অনলাইন ফরম পূরণ, ছবি-স্বাক্ষর রিসাইজ, আবেদন জমা।", category:"চাকরির আবেদন"},
-  {title:"ভর্তি ফরম পূরণ", price:"৳৩০০", desc:"SSC/HSC পরবর্তী ভর্তি পরীক্ষার অনলাইন ফরম নির্ভুলভাবে পূরণ ও জমা।", category:"ভর্তি ফরম"},
-  {title:"জরুরি ডেলিভারি (একই দিন)", price:"+৳১০০", desc:"একই দিনে কাজ সম্পন্ন করার জন্য বাড়তি চার্জ।", category:"অন্যান্য"}
+  {title:"ভর্তির আবেদন", originalPrice:"১০০", price:"৮০", discountLabel:"20% OFF", highlight:"red",
+    requirements:["জন্ম অথবা জাতীয় পরিচয়পত্র","পূর্ববর্তী শ্রেণির সকল একাডেমিক তথ্য","পিতা মাতার জাতীয় পরিচয়পত্র"]},
+  {title:"ফর্ম ফিলাপ", originalPrice:"১০০", price:"৮৫", discountLabel:"15% OFF", highlight:"none",
+    requirements:["রেজিস্ট্রেশন নম্বর ও ফোন নম্বর"]},
+  {title:"সরকারি চাকরির আবেদন", originalPrice:"১০০", price:"৭৫", discountLabel:"25% OFF", highlight:"none",
+    requirements:["সকল একাডেমিক সার্টিফিকেট অথবা নম্বরপত্র","জাতীয় পরিচয়পত্র"]},
+  {title:"সিভি ২ পাতা", originalPrice:"১০০", price:"৮০", discountLabel:"20% OFF", highlight:"none",
+    requirements:["সকল একাডেমিক সার্টিফিকেট অথবা নম্বরপত্র","জাতীয় পরিচয়পত্র"]},
+  {title:"সিভি ইন্টারন্যাশনাল", originalPrice:"২০০", price:"১৫০", discountLabel:"25% OFF", highlight:"purple",
+    requirements:["সকল একাডেমিক সার্টিফিকেট অথবা নম্বরপত্র","জাতীয় পরিচয়পত্র"]},
+  {title:"ড্রাইভিং লাইসেন্স (মোটর সাইকেল)", originalPrice:"৭৫০", price:"৭০০", discountLabel:"50 TK OFF", highlight:"none",
+    requirements:["জাতীয় পরিচয়পত্র ও ছবি","একাডেমিক সার্টিফিকেট","নিজের মোবাইল নম্বর"]}
 ];
 async function ensureDefaultServices(){
   if(seededDefaults || !siteLoaded) return;
@@ -971,17 +1056,32 @@ async function ensureDefaultServices(){
   DEFAULT_SERVICES_ADMIN.forEach((s,i)=>{ payload["seed"+i]={...s, sort:(i+1)*10}; });
   try{ await set(ref(db,"dorkhast/site/services"), payload); }catch(e){ console.error(e); }
 }
+const HIGHLIGHT_COLORS={red:"var(--stamp-dark, #b91c1c)",purple:"#7c3aed",none:"var(--line)"};
+function serviceReqList(s){
+  const reqs=(s.requirements||[]).filter(Boolean);
+  if(!reqs.length) return "";
+  return `<ol style="margin:6px 0 0;padding-left:18px;font-size:13px;color:var(--ink-soft);">${reqs.map(r=>`<li>${esc(r)}</li>`).join("")}</ol>`;
+}
 function servicesView(){
   ensureDefaultServices();
   const items=Object.entries(D.site?.services||{}).sort((a,b)=>(a[1].sort||0)-(b[1].sort||0));
   return `
   <div class="section-head"><h2>সেবা ও মূল্য তালিকা</h2><button class="btn btn-primary btn-sm" onclick="addService()">＋ নতুন সেবা</button></div>
-  <p style="font-size:13px;color:var(--ink-soft);margin:-8px 0 16px;">ওয়েবসাইটে সেবাগুলো ট্যাব আকারে দেখানো হয় — নিচের ↑ ↓ বাটন দিয়ে ট্যাবের ক্রম (অবস্থান) ইচ্ছামতো পরিবর্তন করতে পারবেন।</p>
-  <div class="card">
-    ${items.length?items.map(([id,s],i)=>`<div class="list-item">
-      <div class="info"><h4>${i+1}. ${esc(s.title)} — <span style="color:var(--gold)">${esc(s.price)}</span></h4>
-        ${s.desc?`<p>${esc(s.desc)}</p>`:""}</div>
-      <div class="list-actions">
+  <p style="font-size:13px;color:var(--ink-soft);margin:-8px 0 16px;">ওয়েবসাইটে সেবাগুলো কার্ড আকারে দেখানো হয় (মূল দাম, ছাড়ের দাম, ছাড়ের ব্যাজ ও প্রয়োজনীয় তথ্য সহ) — কার্ডের ⠿ হ্যান্ডেল ধরে টেনে (ড্র্যাগ করে) নতুন জায়গায় ছেড়ে দিন, অথবা ↑ ↓ বাটন দিয়ে ক্রম পরিবর্তন করুন।</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;">
+    ${items.length?items.map(([id,s],i)=>`<div class="card svc-card" draggable="true" data-id="${id}"
+        ondragstart='svDragStart(event,"${id}")' ondragover='svDragOver(event)' ondragleave='svDragLeave(event)' ondrop='svDrop(event,"${id}")' ondragend='svDragEnd(event)'
+        style="position:relative;border:2px solid ${HIGHLIGHT_COLORS[s.highlight]||"var(--line)"};padding:16px;">
+      ${s.discountLabel?`<div style="position:absolute;top:10px;right:10px;background:#ef4444;color:#fff;font-size:11px;font-weight:700;padding:4px 8px;border-radius:6px;text-align:center;line-height:1.2;">${esc(s.discountLabel)}</div>`:""}
+      <div class="svc-drag-handle" title="টেনে সরান" style="position:absolute;top:8px;left:6px;">⠿</div>
+      <h4 style="font-size:15.5px;margin:0 0 8px;padding-left:20px;padding-right:56px;">${i+1}. ${esc(s.title)}</h4>
+      <div style="margin-bottom:6px;">
+        ${s.originalPrice?`<span style="text-decoration:line-through;color:var(--ink-soft);font-size:13px;margin-right:6px;">${esc(s.originalPrice)}</span>`:""}
+        <span style="color:var(--gold);font-weight:700;font-size:17px;">${esc(s.price)}</span>
+      </div>
+      ${serviceReqList(s)}
+      ${s.desc?`<p style="font-size:13px;color:var(--ink-soft);margin-top:6px;">${esc(s.desc)}</p>`:""}
+      <div class="list-actions" style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn btn-soft btn-sm" title="উপরে সরান" ${i===0?"disabled":""} onclick='moveService("${id}",-1)'>↑</button>
         <button class="btn btn-soft btn-sm" title="নিচে সরান" ${i===items.length-1?"disabled":""} onclick='moveService("${id}",1)'>↓</button>
         <button class="btn btn-soft btn-sm" onclick='editService("${id}")'>সম্পাদনা</button>
@@ -989,6 +1089,46 @@ function servicesView(){
       </div>
     </div>`).join(""):`<div class="empty">সেবা তালিকা লোড হচ্ছে...</div>`}
   </div>`;
+}
+let svcDragSrcId=null;
+window.svDragStart=function(ev,id){
+  svcDragSrcId=id;
+  ev.dataTransfer.effectAllowed="move";
+  try{ ev.dataTransfer.setData("text/plain", id); }catch(e){}
+  ev.currentTarget.classList.add("dragging");
+};
+window.svDragOver=function(ev){
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect="move";
+  ev.currentTarget.classList.add("drag-over");
+};
+window.svDragLeave=function(ev){
+  ev.currentTarget.classList.remove("drag-over");
+};
+window.svDrop=async function(ev,targetId){
+  ev.preventDefault();
+  ev.currentTarget.classList.remove("drag-over");
+  const srcId=svcDragSrcId;
+  svcDragSrcId=null;
+  if(!srcId||srcId===targetId) return;
+  await reorderServices(srcId,targetId);
+};
+window.svDragEnd=function(ev){
+  ev.currentTarget.classList.remove("dragging");
+  document.querySelectorAll(".svc-card.drag-over").forEach(el=>el.classList.remove("drag-over"));
+};
+async function reorderServices(srcId,targetId){
+  const items=Object.entries(D.site?.services||{}).sort((a,b)=>(a[1].sort||0)-(b[1].sort||0));
+  const ids=items.map(([id])=>id);
+  const fromIdx=ids.indexOf(srcId), toIdx=ids.indexOf(targetId);
+  if(fromIdx<0||toIdx<0||fromIdx===toIdx) return;
+  ids.splice(fromIdx,1);
+  ids.splice(toIdx,0,srcId);
+  try{
+    const updates={};
+    ids.forEach((id,i)=>{ updates[`dorkhast/site/services/${id}/sort`]=(i+1)*10; });
+    await update(ref(db), updates);
+  }catch(e){ toast("ক্রম পরিবর্তন ব্যর্থ: "+e.message); }
 }
 window.moveService=async function(id, dir){
   const items=Object.entries(D.site?.services||{}).sort((a,b)=>(a[1].sort||0)-(b[1].sort||0));
@@ -1008,20 +1148,35 @@ window.addService=()=>serviceModal();
 window.editService=id=>serviceModal(id, D.site.services[id]);
 function serviceModal(id, s){
   s=s||{};
+  const reqText=(s.requirements||[]).join("\n");
   modal(id?"সেবা সম্পাদনা":"নতুন সেবা", `
-    <div class="field"><label>নাম</label><input id="svTitle" value="${esc(s.title||"")}" placeholder="যেমন: সিভি তৈরি ও সংশোধন"></div>
-    <div class="field"><label>মূল্য (প্রদর্শিত টেক্সট)</label><input id="svPrice" value="${esc(s.price||"")}" placeholder="যেমন: ৳৩০০ থেকে"></div>
-    <div class="field"><label>বিবরণ</label><textarea id="svDesc">${esc(s.desc||"")}</textarea></div>
+    <div class="field"><label>নাম</label><input id="svTitle" value="${esc(s.title||"")}" placeholder="যেমন: ভর্তির আবেদন"></div>
+    <div class="field"><label>আসল মূল্য (ছাড়ের আগে, ঐচ্ছিক)</label><input id="svOriginalPrice" value="${esc(s.originalPrice||"")}" placeholder="যেমন: ১০০"></div>
+    <div class="field"><label>মূল্য (ছাড়ের পর / বর্তমান)</label><input id="svPrice" value="${esc(s.price||"")}" placeholder="যেমন: ৮০"></div>
+    <div class="field"><label>ছাড়ের ব্যাজ (ঐচ্ছিক)</label><input id="svDiscountLabel" value="${esc(s.discountLabel||"")}" placeholder="যেমন: 20% OFF অথবা 50 TK OFF"></div>
+    <div class="field"><label>কার্ডের বর্ডার রঙ (হাইলাইট)</label>
+      <select id="svHighlight">
+        <option value="none" ${(!s.highlight||s.highlight==="none")?"selected":""}>সাধারণ (কোনো হাইলাইট নয়)</option>
+        <option value="red" ${s.highlight==="red"?"selected":""}>লাল</option>
+        <option value="purple" ${s.highlight==="purple"?"selected":""}>বেগুনি</option>
+      </select>
+    </div>
+    <div class="field"><label>প্রয়োজনীয় তথ্য (প্রতি লাইনে একটি)</label><textarea id="svRequirements" placeholder="যেমন:\nজাতীয় পরিচয়পত্র\nএকাডেমিক সার্টিফিকেট">${esc(reqText)}</textarea></div>
+    <div class="field"><label>বিবরণ (ঐচ্ছিক)</label><textarea id="svDesc">${esc(s.desc||"")}</textarea></div>
     <button class="btn btn-primary btn-wide" onclick='saveService("${id||""}")'>সংরক্ষণ করুন</button>
   `);
 }
 window.saveService=async function(id){
   const title=$("svTitle").value.trim(), price=$("svPrice").value.trim(), desc=$("svDesc").value.trim();
+  const originalPrice=$("svOriginalPrice").value.trim();
+  const discountLabel=$("svDiscountLabel").value.trim();
+  const highlight=$("svHighlight").value;
+  const requirements=$("svRequirements").value.split("\n").map(x=>x.trim()).filter(Boolean);
   if(!title||!price) return toast("নাম ও মূল্য দিন");
   try{
     const key=id||push(ref(db,"dorkhast/site/services")).key;
     const sort=id?(D.site.services[id].sort||0):(Date.now());
-    await set(ref(db,"dorkhast/site/services/"+key), {title, price, desc, sort});
+    await set(ref(db,"dorkhast/site/services/"+key), {title, originalPrice, price, discountLabel, highlight, requirements, desc, sort});
     closeModal(); toast("সেবা সংরক্ষণ হয়েছে ✓");
   }catch(e){ toast("সংরক্ষণ ব্যর্থ: "+e.message); }
 };
