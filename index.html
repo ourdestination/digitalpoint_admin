@@ -1273,7 +1273,26 @@ window.deletePromoPayment=async function(holderId, payKey){
 /* ---- ATM-style cash memo (admin-authored bill — never auto-generated;
        admin adds line items / extra charges and an optional discount) ---- */
 function memoIdLabel(o){ return "DKH-"+o.orderId.slice(-6).toUpperCase(); }
+const GOVT_ITEM_LABEL="Govt. Payment";
 let memoDraft=null; // {orderId, items:[{label,amount}], discount, note, promoHolderId}
+
+function isGovtItem(it){ return (it.label||"").trim().toLowerCase()===GOVT_ITEM_LABEL.toLowerCase(); }
+function ensureGovtItem(items){
+  if(!items.some(isGovtItem)) items.push({label:GOVT_ITEM_LABEL, amount:0});
+  return items;
+}
+/* Govt. Payment আইটেমের টাকায় কোনো ছাড় (ম্যানুয়াল বা প্রোমো) প্রযোজ্য নয় —
+   তাই ছাড় গণনার জন্য "ছাড়যোগ্য" ভিত্তি বের করা হয় Govt. Payment বাদ দিয়ে,
+   এবং কোনো ছাড় (মিলিতভাবে) সেই ভিত্তির বেশি প্রয়োগ হয় না। */
+function computeMemoTotals(items, discountInput, holder){
+  const subtotal = items.reduce((s,it)=>s+(Number(it.amount)||0),0);
+  const govtAmount = items.filter(isGovtItem).reduce((s,it)=>s+(Number(it.amount)||0),0);
+  const discountableBase = Math.max(0, subtotal-govtAmount);
+  let promoDiscount = holder ? Math.min(promoDiscountAmount(discountableBase, holder), discountableBase) : 0;
+  const discount = Math.min(Number(discountInput)||0, Math.max(0, discountableBase-promoDiscount));
+  const total = Math.max(0, subtotal-discount-promoDiscount);
+  return {subtotal, govtAmount, discountableBase, discount, promoDiscount, total};
+}
 
 function readMemoDraftFromForm(){
   if(!memoDraft) return;
@@ -1299,37 +1318,40 @@ window.addMemoItem=function(){
 };
 window.removeMemoItem=function(idx){
   readMemoDraftFromForm();
+  if(isGovtItem(memoDraft.items[idx])) return toast("Govt. Payment আইটেমটি মুছে ফেলা যাবে না");
   memoDraft.items.splice(idx,1);
   if(!memoDraft.items.length) memoDraft.items.push({label:"", amount:0});
+  ensureGovtItem(memoDraft.items);
   renderMemoEditor();
 };
 function renderMemoEditor(){
-  const subtotal=memoSubtotal();
-  const discount=Number(memoDraft.discount)||0;
+  ensureGovtItem(memoDraft.items);
   const holder = memoDraft.promoHolderId ? (D.promoHolders||{})[memoDraft.promoHolderId] : null;
-  const promoDiscount = holder ? promoDiscountAmount(subtotal, holder) : 0;
-  const total=Math.max(0, subtotal-discount-promoDiscount);
+  const {subtotal, discount, promoDiscount, total} = computeMemoTotals(memoDraft.items, memoDraft.discount, holder);
   const holderOptions=Object.entries(D.promoHolders||{});
   modal("ক্যাশ মেমো তৈরি করুন", `
     <p style="font-size:13px;color:var(--ink-soft);margin:-4px 0 14px;">সেবার মূল্য, বাড়তি চার্জ ও ছাড় যোগ করে কাস্টমারের জন্য একটি বিল তৈরি করুন। সংরক্ষণ না করা পর্যন্ত কাস্টমার কোনো মেমো দেখতে পাবেন না।</p>
     <div id="memoItemsList">
-      ${memoDraft.items.map((it,i)=>`
-        <div style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-end;">
-          <div class="field" style="flex:1;margin-bottom:0;"><label>বিবরণ</label><input id="memoItemLabel-${i}" value="${esc(it.label)}" placeholder="যেমন: সিভি তৈরি / বাড়তি চার্জ"></div>
+      ${memoDraft.items.map((it,i)=>{
+        const isGovt=isGovtItem(it);
+        return `
+        <div style="display:flex;gap:8px;margin-bottom:6px;align-items:flex-end;${isGovt?"border:1.5px solid var(--stamp);border-radius:8px;padding:10px;background:#fff5f7;":""}">
+          <div class="field" style="flex:1;margin-bottom:0;"><label>বিবরণ</label><input id="memoItemLabel-${i}" value="${esc(it.label)}" placeholder="যেমন: সিভি তৈরি / বাড়তি চার্জ" ${isGovt?"readonly":""}></div>
           <div class="field" style="width:110px;margin-bottom:0;"><label>মূল্য (৳)</label><input id="memoItemAmount-${i}" type="number" value="${it.amount||0}"></div>
-          <button type="button" class="btn btn-danger btn-sm" onclick='removeMemoItem(${i})' ${memoDraft.items.length<=1?"disabled":""}>✕</button>
+          <button type="button" class="btn btn-danger btn-sm" onclick='removeMemoItem(${i})' ${(memoDraft.items.length<=1||isGovt)?"disabled":""}>✕</button>
         </div>
-      `).join("")}
+        ${isGovt?`<p style="font-size:12px;color:var(--stamp-dark);margin:0 0 10px;">Govt. Payment আইটেমটি সবসময় থাকবে এবং এর টাকায় কোনো ছাড় (ম্যানুয়াল বা প্রোমো) প্রযোজ্য হবে না।</p>`:""}
+      `;}).join("")}
     </div>
     <button type="button" class="btn btn-soft btn-sm" onclick="addMemoItem()" style="margin-bottom:18px;">＋ আইটেম যোগ করুন</button>
-    <div class="field"><label>ছাড় (৳, ঐচ্ছিক)</label><input id="memoDiscount" type="number" value="${discount||0}"></div>
+    <div class="field"><label>ছাড় (৳, ঐচ্ছিক — Govt. Payment বাদে বাকি অংশে প্রযোজ্য)</label><input id="memoDiscount" type="number" value="${memoDraft.discount||0}"></div>
     <div class="field"><label>কাস্টমারের প্রোমো কোড (ঐচ্ছিক)</label>
       <select id="memoPromoSelect" onchange="onMemoPromoChange()">
         <option value="">— কোনো প্রোমো কোড ব্যবহার হয়নি —</option>
         ${holderOptions.map(([id,h])=>`<option value="${id}" ${memoDraft.promoHolderId===id?"selected":""}>${esc(h.code)} — ${esc(h.name)} (ছাড় ${promoLine(h)})${h.active===false?" [নিষ্ক্রিয়]":""}</option>`).join("")}
       </select>
     </div>
-    ${holder?`<p style="font-size:12.5px;color:var(--ink-soft);margin:-6px 0 14px;">এই কোডে কাস্টমার ছাড় পাবেন ${promoLine(holder)}, আর ${esc(holder.name)} কমিশন পাবেন ${promoCommLine(holder)} (অর্ডার "ডেলিভারি সম্পন্ন" হলে)।</p>`:""}
+    ${holder?`<p style="font-size:12.5px;color:var(--ink-soft);margin:-6px 0 14px;">এই কোডে কাস্টমার ছাড় পাবেন ${promoLine(holder)} (Govt. Payment বাদে), আর ${esc(holder.name)} কমিশন পাবেন ${promoCommLine(holder)} (অর্ডার "ডেলিভারি সম্পন্ন" হলে)।</p>`:""}
     <div class="field"><label>নোট (ঐচ্ছিক, বিলে দেখানো হবে)</label><textarea id="memoNote">${esc(memoDraft.note||"")}</textarea></div>
     <div class="detail-line" style="font-size:15px;"><span>সাবটোটাল</span><span>৳${subtotal}</span></div>
     ${discount?`<div class="detail-line" style="font-size:15px;"><span>ছাড়</span><span>−৳${discount}</span></div>`:""}
@@ -1341,11 +1363,16 @@ function renderMemoEditor(){
 window.openMemoEditor=function(orderId){
   const o=D.orders[orderId];
   if(!o) return;
+  let items, discount, note, promoHolderId;
   if(o.memo && o.memo.items && o.memo.items.length){
-    memoDraft={orderId, items:o.memo.items.map(it=>({label:it.label,amount:it.amount})), discount:o.memo.discount||0, note:o.memo.note||"", promoHolderId:(o.memo.promo&&o.memo.promo.holderId)||null};
+    items=o.memo.items.map(it=>({label:it.label,amount:it.amount}));
+    discount=o.memo.discount||0; note=o.memo.note||""; promoHolderId=(o.memo.promo&&o.memo.promo.holderId)||null;
   }else{
-    memoDraft={orderId, items:[{label:o.service, amount:(o.paymentInfo&&o.paymentInfo.amount)||0}], discount:0, note:"", promoHolderId:null};
+    items=[{label:o.service, amount:(o.paymentInfo&&o.paymentInfo.amount)||0}];
+    discount=0; note=""; promoHolderId=null;
   }
+  ensureGovtItem(items);
+  memoDraft={orderId, items, discount, note, promoHolderId};
   renderMemoEditor();
 };
 window.saveMemo=async function(){
@@ -1353,13 +1380,11 @@ window.saveMemo=async function(){
   readMemoDraftFromForm();
   const o=D.orders[memoDraft.orderId];
   if(!o) return;
-  const items=memoDraft.items.filter(it=>(it.label&&it.label.trim()!=="")||it.amount);
+  let items=memoDraft.items.filter(it=>(it.label&&it.label.trim()!=="")||it.amount);
+  ensureGovtItem(items);
   if(!items.length) return toast("অন্তত একটি আইটেম দিন");
-  const subtotal=items.reduce((s,it)=>s+(Number(it.amount)||0),0);
-  const discount=Number(memoDraft.discount)||0;
   const holder = memoDraft.promoHolderId ? (D.promoHolders||{})[memoDraft.promoHolderId] : null;
-  const promoDiscount = holder ? promoDiscountAmount(subtotal, holder) : 0;
-  const total=Math.max(0, subtotal-discount-promoDiscount);
+  const {subtotal, discount, promoDiscount, total} = computeMemoTotals(items, memoDraft.discount, holder);
   const promo = holder ? {
     holderId: memoDraft.promoHolderId,
     code: holder.code,
