@@ -112,11 +112,18 @@
   .filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;}
   .filters select,.filters input{padding:9px 12px;border:1px solid var(--line);border-radius:3px;background:var(--card);}
 
-  .order-row{display:grid;grid-template-columns:1fr auto auto;gap:14px;align-items:center;padding:16px 4px;border-bottom:1px solid var(--line);}
-  .row-actions{display:flex;gap:8px;flex-shrink:0;}
-  .order-row:last-child{border-bottom:0;}
+  .order-status-tabs{display:flex;overflow-x:auto;gap:6px;margin-bottom:14px;padding-bottom:2px;}
+  .order-status-tabs button{white-space:nowrap;padding:10px 16px;margin:2px 0;border-radius:6px;background:var(--card);border:1px solid var(--line);color:var(--ink-soft);font-size:13.5px;font-weight:600;transition:background .15s ease,color .15s ease;}
+  .order-status-tabs button:hover{background:var(--paper-alt);color:var(--primary);}
+  .order-status-tabs button.active{background:linear-gradient(135deg,var(--grad-a),var(--grad-b));color:#fff;border-color:transparent;box-shadow:0 4px 12px rgba(124,58,237,.3);}
+  .order-status-tabs button .count{opacity:.75;font-weight:400;}
+
+  .orders-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;align-items:start;}
+  .order-row{display:flex;flex-direction:column;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px;box-shadow:var(--shadow);}
+  .order-row-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;}
   .order-row h4{font-size:16px;}
   .order-row .meta{font-size:12.5px;color:var(--ink-soft);margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  .row-actions{display:flex;gap:8px;flex-wrap:wrap;}
   .wa-icon{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#25D366;color:#fff;flex-shrink:0;vertical-align:middle;}
   .wa-icon svg{width:12px;height:12px;}
   .wa-icon:hover{background:#1ebe57;}
@@ -159,7 +166,7 @@
     .side{position:static;display:flex;overflow-x:auto;gap:4px;}
     .side button{white-space:nowrap;width:auto;}
     .stat-grid{grid-template-columns:1fr 1fr;}
-    .order-row{grid-template-columns:1fr;}
+    .orders-grid{grid-template-columns:1fr;}
   }
 
   /* ---- ATM-style cash memo ---- */
@@ -304,6 +311,12 @@ function waLink(phone){
   if(d.startsWith("0")) d="880"+d.slice(1);
   else if(!d.startsWith("880")) d="880"+d;
   return "https://wa.me/"+d;
+}
+function normalizePhone(raw){
+  let d=String(raw||"").replace(/\D/g,"");
+  if(d.startsWith("880")) d="0"+d.slice(3);
+  if(d.length===10 && !d.startsWith("0")) d="0"+d;
+  return d;
 }
 const WA_ICON_SVG = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.01 2C6.5 2 2.02 6.48 2.02 12c0 1.87.52 3.62 1.4 5.12L2 22l5.02-1.4c1.44.79 3.1 1.24 4.99 1.24 5.51 0 9.99-4.48 9.99-10S17.52 2 12.01 2zm0 18.18c-1.66 0-3.2-.45-4.53-1.24l-.32-.19-3.05.85.86-3-.2-.31A8.13 8.13 0 0 1 3.84 12c0-4.5 3.67-8.17 8.17-8.17S20.18 7.5 20.18 12s-3.67 8.18-8.17 8.18zm4.53-6.13c-.25-.12-1.47-.72-1.7-.8-.23-.08-.39-.12-.56.12-.16.25-.64.8-.78.96-.14.16-.29.18-.53.06-.25-.12-1.05-.39-2-1.23-.74-.66-1.24-1.47-1.39-1.72-.14-.25-.02-.38.11-.5.11-.11.25-.29.37-.43.12-.14.16-.25.25-.41.08-.16.04-.31-.02-.43-.06-.12-.56-1.35-.77-1.85-.2-.48-.41-.42-.56-.43h-.48c-.16 0-.43.06-.65.31-.23.25-.86.84-.86 2.05 0 1.21.88 2.38 1 2.54.12.16 1.73 2.64 4.2 3.7.59.25 1.05.4 1.41.52.59.19 1.13.16 1.55.1.47-.07 1.47-.6 1.68-1.18.21-.58.21-1.08.15-1.18-.06-.1-.23-.16-.48-.28z"/></svg>`;
 
@@ -538,20 +551,22 @@ function dashboard(){
     <div class="stat-card"><b>${Number(D.stats.totalApkDownloads||0).toLocaleString("bn-BD")}</b><span>মোট APK ডাউনলোড</span></div>
   </div>
   <div class="section-head" style="margin-top:26px;"><h2 style="font-size:19px;">সাম্প্রতিক অর্ডার</h2></div>
-  <div class="card">
-    ${recent.length?recent.map(orderRow).join(""):`<div class="empty">এখনও কোনো অর্ডার আসেনি।</div>`}
+  <div class="orders-grid">
+    ${recent.length?recent.map(orderRow).join(""):`<div class="card empty">এখনও কোনো অর্ডার আসেনি।</div>`}
   </div>`;
 }
 
 /* ---- orders ---- */
 function orderRow(o){
   return `<div class="order-row">
-    <div>
-      <h4>${esc(o.name)} &nbsp;·&nbsp; ${esc(o.service)}</h4>
-      <div class="meta">📞 ${esc(o.phone)} <a class="wa-icon" href="${esc(waLink(o.phone))}" title="Whatsapp এ মেসেজ করুন" onclick="event.stopPropagation()">${WA_ICON_SVG}</a> &nbsp;·&nbsp; DKH-${esc(o.orderId.slice(-6).toUpperCase())} &nbsp;·&nbsp; ${fmt(o.createdAt)}</div>
+    <div class="order-row-top">
+      <div>
+        <h4>${esc(o.name)} &nbsp;·&nbsp; ${esc(o.service)}</h4>
+        <div class="meta">📞 ${esc(o.phone)} <a class="wa-icon" href="${esc(waLink(o.phone))}" title="Whatsapp এ মেসেজ করুন" onclick="event.stopPropagation()">${WA_ICON_SVG}</a> &nbsp;·&nbsp; DKH-${esc(o.orderId.slice(-6).toUpperCase())} &nbsp;·&nbsp; ${fmt(o.createdAt)}${o.customerId?` &nbsp;·&nbsp; 🆔 ${esc(o.customerId)}`:""}</div>
+      </div>
+      <span class="badge badge-${esc(o.status)}">${esc(STATUS_LABEL[o.status]||o.status)}</span>
+      ${o.deliveryFiles&&Object.keys(o.deliveryFiles).length?`<span title="কাজের ফাইল আপলোড করা আছে" style="font-size:15px;">📎</span>`:""}
     </div>
-    <span class="badge badge-${esc(o.status)}">${esc(STATUS_LABEL[o.status]||o.status)}</span>
-    ${o.deliveryFiles&&Object.keys(o.deliveryFiles).length?`<span title="কাজের ফাইল আপলোড করা আছে" style="font-size:15px;">📎</span>`:""}
     <div class="row-actions">
       <button class="btn btn-soft btn-sm" onclick='openOrder("${o.orderId}")'>বিস্তারিত</button>
       <button class="btn btn-soft btn-sm" onclick='openMemo("${o.orderId}")'>🧾 মেমো</button>
@@ -561,32 +576,34 @@ function orderRow(o){
     </div>
   </div>`;
 }
+let activeOrderStatusTab = "";
 function ordersView(){
   const all=Object.values(D.orders).sort((a,b)=>b.createdAt-a.createdAt);
+  const tabs=[["","সব"],...Object.entries(STATUS_LABEL)];
+  const countFor=key=>key?all.filter(o=>o.status===key).length:all.length;
+  const filtered = activeOrderStatusTab ? all.filter(o=>o.status===activeOrderStatusTab) : all;
   return `
   <div class="section-head"><h2>অর্ডার ব্যবস্থাপনা</h2></div>
+  <div class="order-status-tabs">
+    ${tabs.map(([key,label])=>`<button class="${activeOrderStatusTab===key?"active":""}" onclick='setOrderStatusTab("${key}")'>${esc(label)} <span class="count">(${countFor(key)})</span></button>`).join("")}
+  </div>
   <div class="filters">
-    <select id="statusFilter" onchange="filterOrders()">
-      <option value="">সব স্ট্যাটাস</option>
-      <option value="pending">অপেক্ষমান</option>
-      <option value="processing">কাজ চলছে</option>
-      <option value="ready">প্রস্তুত</option>
-      <option value="delivered">ডেলিভারি সম্পন্ন</option>
-      <option value="cancelled">বাতিল</option>
-    </select>
     <input id="searchOrders" placeholder="নাম বা মোবাইল নম্বর দিয়ে খুঁজুন" oninput="filterOrders()">
   </div>
-  <div class="card" id="ordersList">
-    ${all.length?all.map(orderRow).join(""):`<div class="empty">এখনও কোনো অর্ডার আসেনি।</div>`}
+  <div class="orders-grid" id="ordersList">
+    ${filtered.length?filtered.map(orderRow).join(""):`<div class="card empty">এই অবস্থায় কোনো অর্ডার পাওয়া যায়নি।</div>`}
   </div>`;
 }
+window.setOrderStatusTab=function(key){
+  activeOrderStatusTab = key;
+  render("orders");
+};
 window.filterOrders=function(){
-  const status=$("statusFilter").value;
   const q=$("searchOrders").value.trim().toLowerCase();
   let all=Object.values(D.orders).sort((a,b)=>b.createdAt-a.createdAt);
-  if(status) all=all.filter(o=>o.status===status);
+  if(activeOrderStatusTab) all=all.filter(o=>o.status===activeOrderStatusTab);
   if(q) all=all.filter(o=>(o.name||"").toLowerCase().includes(q)||(o.phone||"").includes(q));
-  $("ordersList").innerHTML = all.length?all.map(orderRow).join(""):`<div class="empty">কোনো অর্ডার পাওয়া যায়নি।</div>`;
+  $("ordersList").innerHTML = all.length?all.map(orderRow).join(""):`<div class="card empty">কোনো অর্ডার পাওয়া যায়নি।</div>`;
 };
 
 window.openOrder=function(orderId){
@@ -596,6 +613,7 @@ window.openOrder=function(orderId){
   modal(`অর্ডার DKH-${o.orderId.slice(-6).toUpperCase()}`, `
     <h3 style="font-size:22px;margin:0 0 14px;color:var(--ink, #1a1a1a);">${esc(o.service)}</h3>
     <div class="detail-line"><span>নাম</span><span>${esc(o.name)}</span></div>
+    ${o.customerId?`<div class="detail-line"><span>কাস্টমার আইডি</span><span>${esc(o.customerId)}</span></div>`:""}
     <div class="detail-line"><span>মোবাইল নম্বর</span><span>${esc(o.phone)} <a class="wa-icon" href="${esc(waLink(o.phone))}" title="Whatsapp এ মেসেজ করুন">${WA_ICON_SVG}</a></span></div>
     <div class="detail-line"><span>জমার সময়</span><span>${fmt(o.createdAt)}</span></div>
     ${o.details?`<div class="detail-notes">${esc(o.details)}</div>`:""}
@@ -1298,11 +1316,17 @@ function reviewsView(){
 /* ---- customer records (grouped by service type, with one-click bulk WhatsApp messaging) ---- */
 let activeRecordSection=null;
 function recordsView(){
+  if(activeRecordSection==="__ALL__") return allCustomersView();
   if(activeRecordSection && !D.site?.customerRecords?.[activeRecordSection]) activeRecordSection=null;
   if(activeRecordSection) return recordDetailView(activeRecordSection);
   const sections=Object.entries(D.site?.customerRecords||{}).sort((a,b)=>(a[1].at||0)-(b[1].at||0));
   return `
-  <div class="section-head"><h2>কাস্টমার রেকর্ড</h2><button class="btn btn-primary btn-sm" onclick="addRecordSection()">＋ নতুন সেকশন (ম্যানুয়াল)</button></div>
+  <div class="section-head"><h2>কাস্টমার রেকর্ড</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-soft btn-sm" onclick="openAllCustomers()">👥 সকল কাস্টমার একসাথে দেখুন</button>
+      <button class="btn btn-primary btn-sm" onclick="addRecordSection()">＋ নতুন সেকশন (ম্যানুয়াল)</button>
+    </div>
+  </div>
   <p style="font-size:13px;color:var(--ink-soft);margin:-8px 0 16px;">কাস্টমার যখন ওয়েবসাইটে অর্ডার করেন, তখন সেবার ধরণ অনুযায়ী সেকশনে তার নাম ও মোবাইল নম্বর স্বয়ংক্রিয়ভাবে রেকর্ড হয়ে যায় — অর্ডার সেকশন থেকে পরে অর্ডারটি মুছে ফেললেও এই রেকর্ড থেকে যায়। প্রয়োজনে এখান থেকে ম্যানুয়ালি নতুন সেকশন বা কাস্টমার যোগ করা যাবে, এবং যেকোনো রেকর্ড এডমিন চাইলে মুছেও ফেলতে পারবে। প্রতিটি সেকশন থেকে একসাথে সব কাস্টমারকে WhatsApp-এ মেসেজ পাঠানো যাবে।</p>
   <div class="card">
     ${sections.length?sections.map(([id,sec])=>{
@@ -1315,6 +1339,44 @@ function recordsView(){
         </div>
       </div>`;
     }).join(""):`<div class="empty">এখনও কোনো সেকশন তৈরি করা হয়নি।</div>`}
+  </div>`;
+}
+window.openAllCustomers=function(){ activeRecordSection="__ALL__"; render("records"); };
+/* সব সেকশনের কাস্টমার একত্রে — মোবাইল নম্বর অনুযায়ী মিলিয়ে ডুপ্লিকেট বাদ দিয়ে দেখায়,
+   কোন কোন সেকশনে (সেবায়) তিনি আছেন তাও দেখায় */
+function allCustomersView(){
+  const sections=Object.entries(D.site?.customerRecords||{});
+  const merged={};
+  sections.forEach(([secId,sec])=>{
+    Object.entries(sec.customers||{}).forEach(([cid,c])=>{
+      const key = normalizePhone(c.phone||"") || (secId+"-"+cid);
+      if(!merged[key]){
+        merged[key] = {...c, sectionNames:[sec.name||""]};
+      }else{
+        if(!merged[key].sectionNames.includes(sec.name)) merged[key].sectionNames.push(sec.name||"");
+        if((c.at||0) > (merged[key].at||0)) merged[key].at = c.at;
+        if(!merged[key].customerId && c.customerId) merged[key].customerId = c.customerId;
+      }
+    });
+  });
+  const list=Object.values(merged).sort((a,b)=>(b.at||0)-(a.at||0));
+  return `
+  <div class="section-head">
+    <h2>সকল কাস্টমার (সব ধরনের একসাথে)</h2>
+    <button class="btn btn-ghost btn-sm" onclick='backToRecords()'>← সেকশন তালিকা</button>
+  </div>
+  <p style="font-size:13px;color:var(--ink-soft);margin:-8px 0 16px;">সব সেকশনের কাস্টমার একত্রে, মোবাইল নম্বর অনুযায়ী মিলিয়ে ডুপ্লিকেট বাদ দেওয়া হয়েছে — মোট ${list.length} জন।</p>
+  <div class="card">
+    ${list.length?list.map(c=>`<div class="list-item">
+      <div class="info">
+        <h4>${esc(c.name)}</h4>
+        <p>📞 ${esc(c.phone)}${c.customerId?` &nbsp;·&nbsp; 🆔 ${esc(c.customerId)}`:""}</p>
+        <p style="font-size:12px;color:var(--ink-soft);">${esc(c.sectionNames.filter(Boolean).join(", ")||"—")}</p>
+      </div>
+      <div class="list-actions">
+        <a class="wa-icon" href="${esc(waLink(c.phone))}" target="_blank" title="WhatsApp এ মেসেজ করুন">${WA_ICON_SVG}</a>
+      </div>
+    </div>`).join(""):`<div class="empty">এখনও কোনো কাস্টমার যুক্ত করা হয়নি।</div>`}
   </div>`;
 }
 window.openRecordSection=function(id){ activeRecordSection=id; render("records"); };
@@ -1358,7 +1420,7 @@ function recordDetailView(id){
   </div>
   <div class="card">
     ${customers.length?customers.map(([cid,c])=>`<div class="list-item">
-      <div class="info"><h4>${esc(c.name)}</h4><p>📞 ${esc(c.phone)}</p></div>
+      <div class="info"><h4>${esc(c.name)}</h4><p>📞 ${esc(c.phone)}${c.customerId?` &nbsp;·&nbsp; 🆔 ${esc(c.customerId)}`:""}</p></div>
       <div class="list-actions">
         <a class="wa-icon" href="${esc(waLink(c.phone))}" target="_blank" title="WhatsApp এ মেসেজ করুন">${WA_ICON_SVG}</a>
         <button class="btn btn-danger btn-sm" onclick='deleteRecordCustomer("${id}","${cid}")'>মুছুন</button>
