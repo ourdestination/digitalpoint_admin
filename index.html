@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#F6F1E4">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Tiro+Bangla:ital@0;1&family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Tiro+Bangla:ital@0;1&family=Hind+Siliguri:wght@400;500;600;700&family=Noto+Sans+Bengali:wght@500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
   :root{
@@ -20,6 +20,8 @@
     --accent1:#FF6B6B; --accent2:#FFC93C; --accent3:#00C2A8; --accent4:#FF9F1C; --accent5:#4EA8DE; --accent6:#B14EF5;
   }
   *{box-sizing:border-box;}
+  /* সংখ্যা (০-৯) গুলো আলাদা, বেশি স্পষ্ট একটা বাংলা ফন্টে দেখানোর জন্য — bnDigits() এই class দিয়ে সংখ্যা wrap করে */
+  .bn-digit{font-family:'Noto Sans Bengali','Hind Siliguri',sans-serif;font-variant-numeric:normal;}
   body{margin:0;background:
       radial-gradient(circle at 8% 0%, rgba(124,58,237,.10), transparent 40%),
       radial-gradient(circle at 95% 12%, rgba(236,72,153,.10), transparent 40%),
@@ -322,7 +324,9 @@ const db = getDatabase(app);
 
 const $=x=>document.getElementById(x);
 const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
-const fmt=x=>x?new Date(x).toLocaleString("bn-BD",{dateStyle:"medium",timeStyle:"short"}):"—";
+// বাংলা সংখ্যা (০-৯) গুলো আলাদা, স্পষ্ট ফন্টে (Noto Sans Bengali) দেখানোর জন্য span দিয়ে wrap করে
+const bnDigits=s=>String(s).replace(/[০-৯]+/g,m=>`<span class="bn-digit">${m}</span>`);
+const fmt=x=>x?bnDigits(new Date(x).toLocaleString("bn-BD",{dateStyle:"medium",timeStyle:"short"})):"—";
 
 const STATUS_LABEL = {pending:"অপেক্ষমান", processing:"কাজ চলছে", ready:"প্রস্তুত (ডেলিভারির অপেক্ষায়)", delivered:"ডেলিভারি সম্পন্ন", cancelled:"বাতিল"};
 const PAYMENT_LABEL = {bkash:"বিকাশ", rocket:"রকেট", nagad:"নগদ", banglaqr:"বাংলা কিউআর (QR)"};
@@ -717,7 +721,7 @@ function dashboard(){
   const count=s=>all.filter(o=>o.status===s).length;
   const recent=all.sort((a,b)=>b.createdAt-a.createdAt).slice(0,6);
   const rev=revenueStats();
-  const money=x=>"৳"+Number(x||0).toLocaleString("bn-BD");
+  const money=x=>bnDigits("৳"+Number(x||0).toLocaleString("bn-BD"));
   const promoDueTotal=Object.keys(D.promoHolders||{}).reduce((s,id)=>s+promoStatsFor(id).due,0);
   return `
   <div class="section-head"><h2>ড্যাশবোর্ড</h2></div>
@@ -730,9 +734,9 @@ function dashboard(){
     <div class="stat-card"><b>${money(rev.day)}</b><span>আজকের আয় (ভেরিফাইড পেমেন্ট)</span></div>
     <div class="stat-card"><b>${money(rev.month)}</b><span>এই মাসের আয় (ভেরিফাইড পেমেন্ট)</span></div>
     <div class="stat-card"><b>${money(rev.year)}</b><span>এই বছরের আয় (ভেরিফাইড পেমেন্ট)</span></div>
-    <div class="stat-card"><b>${Number(D.stats.totalVisitors||0).toLocaleString("bn-BD")}</b><span>মোট ওয়েবসাইট ভিজিটর</span></div>
-    <div class="stat-card"><b>${Number(D.liveCount||0).toLocaleString("bn-BD")}</b><span>লাইভ ভিজিটর (এখন)</span></div>
-    <div class="stat-card"><b>${Number(D.stats.totalApkDownloads||0).toLocaleString("bn-BD")}</b><span>মোট APK ডাউনলোড</span></div>
+    <div class="stat-card"><b>${bnDigits(Number(D.stats.totalVisitors||0).toLocaleString("bn-BD"))}</b><span>মোট ওয়েবসাইট ভিজিটর</span></div>
+    <div class="stat-card"><b>${bnDigits(Number(D.liveCount||0).toLocaleString("bn-BD"))}</b><span>লাইভ ভিজিটর (এখন)</span></div>
+    <div class="stat-card"><b>${bnDigits(Number(D.stats.totalApkDownloads||0).toLocaleString("bn-BD"))}</b><span>মোট APK ডাউনলোড</span></div>
     <div class="stat-card"><b>${money(promoDueTotal)}</b><span>প্রোমো হোল্ডার বকেয়া কমিশন</span></div>
   </div>
   <div class="section-head" style="margin-top:26px;"><h2 style="font-size:19px;">সাম্প্রতিক অর্ডার</h2></div>
@@ -1045,7 +1049,7 @@ function paymentsView(){
   const online=all.filter(o=>o.paymentInfo);
   const pending=online.filter(o=>!o.paymentInfo.verified);
   const verified=online.filter(o=>o.paymentInfo.verified);
-  const money=x=>'৳'+Number(x||0).toLocaleString('bn-BD');
+  const money=x=>bnDigits('৳'+Number(x||0).toLocaleString('bn-BD'));
   return `
   <div class="section-head"><h2>পেমেন্ট ভেরিফিকেশন</h2></div>
   <div class="stat-grid" style="margin-bottom:18px;">
@@ -1107,7 +1111,7 @@ function promoStatsFor(holderId){
 function promoView(){
   if(activePromoHolderId && !D.promoHolders?.[activePromoHolderId]) activePromoHolderId=null;
   if(activePromoHolderId) return promoProfileView(activePromoHolderId);
-  const money=x=>"৳"+Number(x||0).toLocaleString("bn-BD");
+  const money=x=>bnDigits("৳"+Number(x||0).toLocaleString("bn-BD"));
   const holders=Object.entries(D.promoHolders||{}).sort((a,b)=>(b[1].createdAt||0)-(a[1].createdAt||0));
   let totalDue=0, totalPaid=0;
   const rows=holders.map(([id,h])=>{ const st=promoStatsFor(id); totalDue+=st.due; totalPaid+=st.paid; return {id,h,st}; });
@@ -1143,7 +1147,7 @@ window.backToPromoList=function(){ activePromoHolderId=null; render("promo"); };
 function promoProfileView(id){
   const h=D.promoHolders[id];
   if(!h){ activePromoHolderId=null; return promoView(); }
-  const money=x=>"৳"+Number(x||0).toLocaleString("bn-BD");
+  const money=x=>bnDigits("৳"+Number(x||0).toLocaleString("bn-BD"));
   const st=promoStatsFor(id);
   const payments=Object.entries(h.payments||{}).sort((a,b)=>(b[1].at||0)-(a[1].at||0));
   return `
