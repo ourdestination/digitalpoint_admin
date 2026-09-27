@@ -283,6 +283,7 @@
       <button class="active" data-tab="dashboard">ড্যাশবোর্ড</button>
       <button data-tab="orders">অর্ডার ব্যবস্থাপনা</button>
       <button data-tab="payments">পেমেন্ট ভেরিফিকেশন</button>
+      <button data-tab="promo">প্রোমো হোল্ডার</button>
       <button data-tab="services">সেবা ও মূল্য তালিকা</button>
       <button data-tab="notices">নোটিশ বোর্ড</button>
       <button data-tab="reviews">কাস্টমার রিভিউ</button>
@@ -431,7 +432,8 @@ window.handleTrackLinkClick=function(orderId, phone){
   sendTrackingLink(orderId, phone);
 };
 
-let D={orders:{}, site:{}, stats:{}, liveCount:0, chats:{}}, offs=[], activeTab="dashboard", siteLoaded=false, seededDefaults=false;
+let D={orders:{}, site:{}, stats:{}, liveCount:0, chats:{}, promoHolders:{}}, offs=[], activeTab="dashboard", siteLoaded=false, seededDefaults=false;
+let activePromoHolderId=null;
 let activeChatPhone=null, __chatConvUnsub=null;
 let notifications=[], knownOrderIds=null;
 
@@ -582,6 +584,7 @@ function listenAll(){
     render(activeTab);
   }));
   offs.push(onValue(ref(db,"dorkhast/site"), s=>{ D.site=s.val()||{}; siteLoaded=true; applyLogo(D.site.logo||""); cleanupExpiredNotices(); render(activeTab); }));
+  offs.push(onValue(ref(db,"dorkhast/promoHolders"), s=>{ D.promoHolders=s.val()||{}; render(activeTab); }));
   offs.push(onValue(ref(db,"dorkhast/stats"), s=>{ D.stats=s.val()||{}; render(activeTab); }));
   offs.push(onValue(ref(db,"dorkhast/presence"), s=>{ const v=s.val(); D.liveCount=v?Object.keys(v).length:0; render(activeTab); }));
   offs.push(onValue(ref(db,"dorkhast/chats"), s=>{
@@ -680,6 +683,7 @@ function render(tab){
   if(tab==="dashboard") m.innerHTML=dashboard();
   else if(tab==="orders") m.innerHTML=ordersView();
   else if(tab==="payments") m.innerHTML=paymentsView();
+  else if(tab==="promo") m.innerHTML=promoView();
   else if(tab==="services") m.innerHTML=servicesView();
   else if(tab==="notices") m.innerHTML=noticesView();
   else if(tab==="reviews") m.innerHTML=reviewsView();
@@ -714,6 +718,7 @@ function dashboard(){
   const recent=all.sort((a,b)=>b.createdAt-a.createdAt).slice(0,6);
   const rev=revenueStats();
   const money=x=>"৳"+Number(x||0).toLocaleString("bn-BD");
+  const promoDueTotal=Object.keys(D.promoHolders||{}).reduce((s,id)=>s+promoStatsFor(id).due,0);
   return `
   <div class="section-head"><h2>ড্যাশবোর্ড</h2></div>
   <div class="stat-grid">
@@ -728,6 +733,7 @@ function dashboard(){
     <div class="stat-card"><b>${Number(D.stats.totalVisitors||0).toLocaleString("bn-BD")}</b><span>মোট ওয়েবসাইট ভিজিটর</span></div>
     <div class="stat-card"><b>${Number(D.liveCount||0).toLocaleString("bn-BD")}</b><span>লাইভ ভিজিটর (এখন)</span></div>
     <div class="stat-card"><b>${Number(D.stats.totalApkDownloads||0).toLocaleString("bn-BD")}</b><span>মোট APK ডাউনলোড</span></div>
+    <div class="stat-card"><b>${money(promoDueTotal)}</b><span>প্রোমো হোল্ডার বকেয়া কমিশন</span></div>
   </div>
   <div class="section-head" style="margin-top:26px;"><h2 style="font-size:19px;">সাম্প্রতিক অর্ডার</h2></div>
   <div class="orders-grid">
@@ -1062,10 +1068,212 @@ function paymentsView(){
   </div>`;
 }
 
+/* ---- promo holder (রেফারেল / প্রোমো কোড) ----
+   dorkhast/promoHolders/{id} = {name, code, discountType('flat'|'percent'), discountValue,
+                                   commissionType('flat'|'percent'), commissionValue, active, createdAt,
+                                   payments:{pushKey:{amount,note,at}}}
+   মেমো তৈরির সময় প্রোমো কোড বেছে নিলে ছাড় ও কমিশন হিসাব হয়ে মেমোর সাথে (memo.promo) সংরক্ষণ হয়।
+   কমিশন কেবল তখনই "অর্জিত" হিসেবে গণনা হয় যখন সংশ্লিষ্ট অর্ডারের স্ট্যাটাস "ডেলিভারি সম্পন্ন"। */
+function promoDiscountAmount(base, holder){
+  if(!holder) return 0;
+  if(holder.discountType==="percent") return Math.round(Number(base||0)*(Number(holder.discountValue)||0)/100);
+  return Number(holder.discountValue)||0;
+}
+function promoCommissionAmount(base, holder){
+  if(!holder) return 0;
+  if(holder.commissionType==="percent") return Math.round(Number(base||0)*(Number(holder.commissionValue)||0)/100);
+  return Number(holder.commissionValue)||0;
+}
+function promoLine(h){ return h.discountType==="percent" ? Number(h.discountValue||0)+"%" : "৳"+Number(h.discountValue||0); }
+function promoCommLine(h){ return h.commissionType==="percent" ? Number(h.commissionValue||0)+"%" : "৳"+Number(h.commissionValue||0); }
+function promoOrdersFor(holderId){
+  return Object.values(D.orders).filter(o=>o.memo && o.memo.promo && o.memo.promo.holderId===holderId).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+}
+function promoStatsFor(holderId){
+  const holder=D.promoHolders[holderId]||{};
+  const orders=promoOrdersFor(holderId);
+  let totalSales=0, earnedCommission=0, pendingCommission=0, deliveredCount=0;
+  orders.forEach(o=>{
+    const p=o.memo.promo;
+    const sale=Number(p.saleAmount ?? o.memo.total ?? 0);
+    totalSales+=sale;
+    if(o.status==="delivered"){ earnedCommission+=Number(p.commissionAmount||0); deliveredCount++; }
+    else pendingCommission+=Number(p.commissionAmount||0);
+  });
+  const paid=Object.values(holder.payments||{}).reduce((s,p)=>s+Number(p.amount||0),0);
+  const due=Math.max(0, earnedCommission-paid);
+  return {orders, totalSales, earnedCommission, pendingCommission, deliveredCount, paid, due};
+}
+function promoView(){
+  if(activePromoHolderId && !D.promoHolders?.[activePromoHolderId]) activePromoHolderId=null;
+  if(activePromoHolderId) return promoProfileView(activePromoHolderId);
+  const money=x=>"৳"+Number(x||0).toLocaleString("bn-BD");
+  const holders=Object.entries(D.promoHolders||{}).sort((a,b)=>(b[1].createdAt||0)-(a[1].createdAt||0));
+  let totalDue=0, totalPaid=0;
+  const rows=holders.map(([id,h])=>{ const st=promoStatsFor(id); totalDue+=st.due; totalPaid+=st.paid; return {id,h,st}; });
+  return `
+  <div class="section-head"><h2>প্রোমো হোল্ডার</h2>
+    <button class="btn btn-primary btn-sm" onclick="addPromoHolder()">＋ নতুন প্রোমো হোল্ডার</button>
+  </div>
+  <p style="font-size:13px;color:var(--ink-soft);margin:-8px 0 16px;">কাস্টমার প্রোমো কোড ব্যবহার করলে ক্যাশ মেমো তৈরির সময় সেই কোড বেছে নিলে স্বয়ংক্রিয়ভাবে কাস্টমারের ছাড় যুক্ত হবে এবং প্রোমো হোল্ডারের কমিশন হিসাব হয়ে যাবে। অর্ডারের স্ট্যাটাস "ডেলিভারি সম্পন্ন" হলে তবেই সেই কমিশন "অর্জিত" হিসেবে গণনা হয়।</p>
+  <div class="stat-grid" style="margin-bottom:18px;">
+    <div class="stat-card"><b>${holders.length}</b><span>মোট প্রোমো হোল্ডার</span></div>
+    <div class="stat-card"><b>${money(totalPaid)}</b><span>সর্বমোট পরিশোধিত কমিশন</span></div>
+    <div class="stat-card"><b>${money(totalDue)}</b><span>সর্বমোট বকেয়া কমিশন</span></div>
+  </div>
+  <div class="card">
+    ${rows.length?rows.map(({id,h,st})=>`
+      <div class="list-item" style="align-items:flex-start;flex-wrap:wrap;">
+        <div class="info">
+          <h4>${esc(h.name)} &nbsp;·&nbsp; <span style="font-family:monospace;color:var(--primary-dark);">${esc(h.code)}</span>${h.active===false?' <span class="badge badge-cancelled">নিষ্ক্রিয়</span>':''}</h4>
+          <p>কাস্টমার ছাড়: ${promoLine(h)} &nbsp;·&nbsp; কমিশন: ${promoCommLine(h)}</p>
+          <p>বিক্রয়: ${money(st.totalSales)} (${st.orders.length} অর্ডার) &nbsp;·&nbsp; অর্জিত কমিশন: ${money(st.earnedCommission)} &nbsp;·&nbsp; পরিশোধিত: ${money(st.paid)} &nbsp;·&nbsp; বকেয়া: <b>${money(st.due)}</b></p>
+        </div>
+        <div class="list-actions">
+          <button class="btn btn-soft btn-sm" onclick='openPromoProfile("${id}")'>প্রোফাইল</button>
+          <button class="btn btn-soft btn-sm" onclick='editPromoHolder("${id}")'>এডিট</button>
+          <button class="btn btn-danger btn-sm" onclick='deletePromoHolder("${id}")'>মুছুন</button>
+        </div>
+      </div>
+    `).join(""):`<div class="empty">এখনও কোনো প্রোমো হোল্ডার যুক্ত করা হয়নি।</div>`}
+  </div>`;
+}
+window.openPromoProfile=function(id){ activePromoHolderId=id; render("promo"); };
+window.backToPromoList=function(){ activePromoHolderId=null; render("promo"); };
+function promoProfileView(id){
+  const h=D.promoHolders[id];
+  if(!h){ activePromoHolderId=null; return promoView(); }
+  const money=x=>"৳"+Number(x||0).toLocaleString("bn-BD");
+  const st=promoStatsFor(id);
+  const payments=Object.entries(h.payments||{}).sort((a,b)=>(b[1].at||0)-(a[1].at||0));
+  return `
+  <div class="section-head">
+    <h2>${esc(h.name)} <span style="font-family:monospace;font-size:16px;color:var(--primary-dark);">(${esc(h.code)})</span></h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-ghost btn-sm" onclick="backToPromoList()">← তালিকা</button>
+      <button class="btn btn-soft btn-sm" onclick='editPromoHolder("${id}")'>এডিট</button>
+      <button class="btn btn-primary btn-sm" onclick='openPromoPaymentModal("${id}")'>＋ কমিশন পরিশোধ যোগ করুন</button>
+    </div>
+  </div>
+  <div class="stat-grid" style="margin-bottom:18px;">
+    <div class="stat-card"><b>${st.orders.length}</b><span>মোট অর্ডার (এই কোডে)</span></div>
+    <div class="stat-card"><b>${st.deliveredCount}</b><span>ডেলিভারি সম্পন্ন</span></div>
+    <div class="stat-card"><b>${money(st.totalSales)}</b><span>সর্বমোট বিক্রয়</span></div>
+    <div class="stat-card"><b>${money(st.earnedCommission)}</b><span>অর্জিত কমিশন</span></div>
+    <div class="stat-card"><b>${money(st.pendingCommission)}</b><span>সম্ভাব্য কমিশন (ডেলিভারি বাকি)</span></div>
+    <div class="stat-card"><b>${money(st.paid)}</b><span>পরিশোধিত কমিশন</span></div>
+    <div class="stat-card"><b>${money(st.due)}</b><span>বকেয়া কমিশন</span></div>
+  </div>
+  <div class="card" style="margin-bottom:18px;">
+    <h3 style="font-size:16px;margin-bottom:6px;">এই কোডে ব্যবহৃত অর্ডারসমূহ</h3>
+    ${st.orders.length?st.orders.map(o=>`
+      <div class="list-item">
+        <div class="info">
+          <h4>DKH-${esc(o.orderId.slice(-6).toUpperCase())} &nbsp;·&nbsp; ${esc(o.name)}</h4>
+          <p>বিক্রয়: ${money(o.memo.promo.saleAmount??o.memo.total)} &nbsp;·&nbsp; কমিশন: ${money(o.memo.promo.commissionAmount)} &nbsp;·&nbsp; ${fmt(o.createdAt)}</p>
+        </div>
+        <div class="list-actions">
+          <span class="badge badge-${esc(o.status)}">${esc(STATUS_LABEL[o.status]||o.status)}</span>
+          <button class="btn btn-soft btn-sm" onclick='openOrder("${o.orderId}")'>বিস্তারিত</button>
+        </div>
+      </div>
+    `).join(""):`<div class="empty">এখনও এই কোডে কোনো অর্ডার হয়নি।</div>`}
+  </div>
+  <div class="card">
+    <h3 style="font-size:16px;margin-bottom:6px;">কমিশন পরিশোধের হিস্ট্রি</h3>
+    ${payments.length?payments.map(([pid,p])=>`
+      <div class="list-item">
+        <div class="info"><h4>${money(p.amount)}</h4><p>${esc(p.note||"—")} &nbsp;·&nbsp; ${fmt(p.at)}</p></div>
+        <div class="list-actions"><button class="btn btn-danger btn-sm" onclick='deletePromoPayment("${id}","${pid}")'>মুছুন</button></div>
+      </div>
+    `).join(""):`<div class="empty">এখনও কোনো পরিশোধ রেকর্ড করা হয়নি।</div>`}
+  </div>`;
+}
+function promoHolderModal(id){
+  const h = id ? (D.promoHolders[id]||{}) : {};
+  modal(id?"প্রোমো হোল্ডার সম্পাদনা":"নতুন প্রোমো হোল্ডার", `
+    <div class="field"><label>নাম</label><input id="phName" value="${esc(h.name||"")}" placeholder="যেমন: রাকিব হাসান"></div>
+    <div class="field"><label>প্রোমো কোড</label><input id="phCode" value="${esc(h.code||"")}" placeholder="যেমন: RAKIB10"></div>
+    <div class="field"><label>কাস্টমার ছাড়ের ধরণ</label>
+      <select id="phDiscType">
+        <option value="flat" ${h.discountType!=="percent"?"selected":""}>নির্দিষ্ট টাকা (৳)</option>
+        <option value="percent" ${h.discountType==="percent"?"selected":""}>শতাংশ (%)</option>
+      </select>
+    </div>
+    <div class="field"><label>ছাড়ের পরিমাণ</label><input id="phDiscValue" type="number" value="${h.discountValue||0}"></div>
+    <div class="field"><label>প্রোমো হোল্ডারের কমিশনের ধরণ</label>
+      <select id="phCommType">
+        <option value="flat" ${h.commissionType!=="percent"?"selected":""}>নির্দিষ্ট টাকা (৳)</option>
+        <option value="percent" ${h.commissionType==="percent"?"selected":""}>শতাংশ (%)</option>
+      </select>
+    </div>
+    <div class="field"><label>কমিশনের পরিমাণ</label><input id="phCommValue" type="number" value="${h.commissionValue||0}"></div>
+    <div class="field"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="phActive" ${h.active===false?"":"checked"} style="width:auto;"> সক্রিয় (মেমো তৈরিতে এই কোড ব্যবহার করা যাবে)</label></div>
+    <p style="font-size:12.5px;color:var(--ink-soft);margin:-6px 0 14px;">ডেলিভারি সম্পন্ন হলে তবেই এই প্রোমো হোল্ডারের কমিশন "অর্জিত" হিসেবে গণনা হবে।</p>
+    <button class="btn btn-primary btn-wide" onclick='savePromoHolder(${id?`"${id}"`:"null"})'>সংরক্ষণ করুন</button>
+  `);
+}
+window.addPromoHolder=()=>promoHolderModal(null);
+window.editPromoHolder=id=>promoHolderModal(id);
+window.savePromoHolder=async function(id){
+  const name=$("phName").value.trim();
+  const code=$("phCode").value.trim().toUpperCase();
+  const discountType=$("phDiscType").value;
+  const discountValue=Number($("phDiscValue").value)||0;
+  const commissionType=$("phCommType").value;
+  const commissionValue=Number($("phCommValue").value)||0;
+  const active=$("phActive").checked;
+  if(!name) return toast("নাম দিন");
+  if(!/^[A-Z0-9_-]{3,20}$/.test(code)) return toast("কোড ইংরেজি অক্ষর/সংখ্যা দিয়ে ৩-২০ ক্যারেক্টারে দিন");
+  const dup=Object.entries(D.promoHolders||{}).find(([hid,hh])=>hid!==id && (hh.code||"").toUpperCase()===code);
+  if(dup) return toast("এই কোড আগে থেকেই ব্যবহৃত হচ্ছে");
+  try{
+    const key=id||push(ref(db,"dorkhast/promoHolders")).key;
+    const payload={name, code, discountType, discountValue, commissionType, commissionValue, active,
+      createdAt:(id&&D.promoHolders[id]&&D.promoHolders[id].createdAt)||Date.now()};
+    await update(ref(db,"dorkhast/promoHolders/"+key), payload);
+    toast("প্রোমো হোল্ডার সংরক্ষণ হয়েছে ✓");
+    closeModal();
+  }catch(e){ toast("ব্যর্থ: "+e.message); }
+};
+window.deletePromoHolder=async function(id){
+  if(!confirm("এই প্রোমো হোল্ডার মুছে ফেলবেন? এর প্রোফাইল ও পরিশোধের হিস্ট্রি মুছে যাবে (পুরনো মেমোতে কোডের তথ্য থেকে যাবে)।")) return;
+  try{
+    await remove(ref(db,"dorkhast/promoHolders/"+id));
+    if(activePromoHolderId===id) activePromoHolderId=null;
+    toast("মুছে ফেলা হয়েছে");
+  }catch(e){ toast("ব্যর্থ: "+e.message); }
+};
+window.openPromoPaymentModal=function(id){
+  modal("কমিশন পরিশোধ যোগ করুন", `
+    <div class="field"><label>পরিমাণ (৳)</label><input id="ppAmount" type="number" placeholder="যেমন: ৫০০"></div>
+    <div class="field"><label>নোট (ঐচ্ছিক)</label><input id="ppNote" placeholder="যেমন: বিকাশে পাঠানো হয়েছে"></div>
+    <button class="btn btn-primary btn-wide" onclick='savePromoPayment("${id}")'>সংরক্ষণ করুন</button>
+  `);
+};
+window.savePromoPayment=async function(id){
+  const amount=Number($("ppAmount").value)||0;
+  const note=$("ppNote").value.trim();
+  if(amount<=0) return toast("সঠিক পরিমাণ দিন");
+  try{
+    const key=push(ref(db,"dorkhast/promoHolders/"+id+"/payments")).key;
+    await set(ref(db,"dorkhast/promoHolders/"+id+"/payments/"+key), {amount, note, at:Date.now()});
+    toast("পরিশোধ রেকর্ড করা হয়েছে ✓");
+    closeModal();
+  }catch(e){ toast("ব্যর্থ: "+e.message); }
+};
+window.deletePromoPayment=async function(holderId, payKey){
+  if(!confirm("এই পরিশোধ রেকর্ডটি মুছে ফেলবেন?")) return;
+  try{
+    await remove(ref(db,"dorkhast/promoHolders/"+holderId+"/payments/"+payKey));
+    toast("মুছে ফেলা হয়েছে");
+  }catch(e){ toast("ব্যর্থ: "+e.message); }
+};
+
 /* ---- ATM-style cash memo (admin-authored bill — never auto-generated;
        admin adds line items / extra charges and an optional discount) ---- */
 function memoIdLabel(o){ return "DKH-"+o.orderId.slice(-6).toUpperCase(); }
-let memoDraft=null; // {orderId, items:[{label,amount}], discount, note}
+let memoDraft=null; // {orderId, items:[{label,amount}], discount, note, promoHolderId}
 
 function readMemoDraftFromForm(){
   if(!memoDraft) return;
@@ -1075,7 +1283,12 @@ function readMemoDraftFromForm(){
   });
   const discEl=$("memoDiscount"); if(discEl) memoDraft.discount=Number(discEl.value)||0;
   const noteEl=$("memoNote"); if(noteEl) memoDraft.note=noteEl.value;
+  const promoEl=$("memoPromoSelect"); if(promoEl) memoDraft.promoHolderId=promoEl.value||null;
 }
+window.onMemoPromoChange=function(){
+  readMemoDraftFromForm();
+  renderMemoEditor();
+};
 function memoSubtotal(){
   return memoDraft.items.reduce((s,it)=>s+(Number(it.amount)||0),0);
 }
@@ -1093,7 +1306,10 @@ window.removeMemoItem=function(idx){
 function renderMemoEditor(){
   const subtotal=memoSubtotal();
   const discount=Number(memoDraft.discount)||0;
-  const total=Math.max(0, subtotal-discount);
+  const holder = memoDraft.promoHolderId ? (D.promoHolders||{})[memoDraft.promoHolderId] : null;
+  const promoDiscount = holder ? promoDiscountAmount(subtotal, holder) : 0;
+  const total=Math.max(0, subtotal-discount-promoDiscount);
+  const holderOptions=Object.entries(D.promoHolders||{});
   modal("ক্যাশ মেমো তৈরি করুন", `
     <p style="font-size:13px;color:var(--ink-soft);margin:-4px 0 14px;">সেবার মূল্য, বাড়তি চার্জ ও ছাড় যোগ করে কাস্টমারের জন্য একটি বিল তৈরি করুন। সংরক্ষণ না করা পর্যন্ত কাস্টমার কোনো মেমো দেখতে পাবেন না।</p>
     <div id="memoItemsList">
@@ -1107,9 +1323,17 @@ function renderMemoEditor(){
     </div>
     <button type="button" class="btn btn-soft btn-sm" onclick="addMemoItem()" style="margin-bottom:18px;">＋ আইটেম যোগ করুন</button>
     <div class="field"><label>ছাড় (৳, ঐচ্ছিক)</label><input id="memoDiscount" type="number" value="${discount||0}"></div>
+    <div class="field"><label>কাস্টমারের প্রোমো কোড (ঐচ্ছিক)</label>
+      <select id="memoPromoSelect" onchange="onMemoPromoChange()">
+        <option value="">— কোনো প্রোমো কোড ব্যবহার হয়নি —</option>
+        ${holderOptions.map(([id,h])=>`<option value="${id}" ${memoDraft.promoHolderId===id?"selected":""}>${esc(h.code)} — ${esc(h.name)} (ছাড় ${promoLine(h)})${h.active===false?" [নিষ্ক্রিয়]":""}</option>`).join("")}
+      </select>
+    </div>
+    ${holder?`<p style="font-size:12.5px;color:var(--ink-soft);margin:-6px 0 14px;">এই কোডে কাস্টমার ছাড় পাবেন ${promoLine(holder)}, আর ${esc(holder.name)} কমিশন পাবেন ${promoCommLine(holder)} (অর্ডার "ডেলিভারি সম্পন্ন" হলে)।</p>`:""}
     <div class="field"><label>নোট (ঐচ্ছিক, বিলে দেখানো হবে)</label><textarea id="memoNote">${esc(memoDraft.note||"")}</textarea></div>
     <div class="detail-line" style="font-size:15px;"><span>সাবটোটাল</span><span>৳${subtotal}</span></div>
     ${discount?`<div class="detail-line" style="font-size:15px;"><span>ছাড়</span><span>−৳${discount}</span></div>`:""}
+    ${promoDiscount?`<div class="detail-line" style="font-size:15px;"><span>প্রোমো ছাড় (${esc(holder.code)})</span><span>−৳${promoDiscount}</span></div>`:""}
     <div class="detail-line" style="font-size:17px;font-weight:700;"><span>সর্বমোট প্রদেয়</span><span>৳${total}</span></div>
     <button class="btn btn-primary btn-wide" style="margin-top:16px;" onclick='saveMemo()'>মেমো সংরক্ষণ করুন</button>
   `);
@@ -1118,9 +1342,9 @@ window.openMemoEditor=function(orderId){
   const o=D.orders[orderId];
   if(!o) return;
   if(o.memo && o.memo.items && o.memo.items.length){
-    memoDraft={orderId, items:o.memo.items.map(it=>({label:it.label,amount:it.amount})), discount:o.memo.discount||0, note:o.memo.note||""};
+    memoDraft={orderId, items:o.memo.items.map(it=>({label:it.label,amount:it.amount})), discount:o.memo.discount||0, note:o.memo.note||"", promoHolderId:(o.memo.promo&&o.memo.promo.holderId)||null};
   }else{
-    memoDraft={orderId, items:[{label:o.service, amount:(o.paymentInfo&&o.paymentInfo.amount)||0}], discount:0, note:""};
+    memoDraft={orderId, items:[{label:o.service, amount:(o.paymentInfo&&o.paymentInfo.amount)||0}], discount:0, note:"", promoHolderId:null};
   }
   renderMemoEditor();
 };
@@ -1133,10 +1357,24 @@ window.saveMemo=async function(){
   if(!items.length) return toast("অন্তত একটি আইটেম দিন");
   const subtotal=items.reduce((s,it)=>s+(Number(it.amount)||0),0);
   const discount=Number(memoDraft.discount)||0;
-  const total=Math.max(0, subtotal-discount);
+  const holder = memoDraft.promoHolderId ? (D.promoHolders||{})[memoDraft.promoHolderId] : null;
+  const promoDiscount = holder ? promoDiscountAmount(subtotal, holder) : 0;
+  const total=Math.max(0, subtotal-discount-promoDiscount);
+  const promo = holder ? {
+    holderId: memoDraft.promoHolderId,
+    code: holder.code,
+    holderName: holder.name,
+    discountType: holder.discountType,
+    discountValue: holder.discountValue,
+    discountAmount: promoDiscount,
+    commissionType: holder.commissionType,
+    commissionValue: holder.commissionValue,
+    commissionAmount: promoCommissionAmount(total, holder),
+    saleAmount: total
+  } : null;
   const memo={
     items, discount, note:(memoDraft.note||"").trim(),
-    subtotal, total,
+    subtotal, total, promo,
     generatedAt: (o.memo&&o.memo.generatedAt) || Date.now(),
     updatedAt: Date.now()
   };
@@ -1184,6 +1422,7 @@ function memoWaText(o){
   rows.push(sline);
   rows.push("সাবটোটাল   : ৳"+m.subtotal);
   if(m.discount) rows.push("ছাড়        : −৳"+m.discount);
+  if(m.promo && m.promo.discountAmount) rows.push("প্রোমো ছাড় ("+m.promo.code+") : −৳"+m.promo.discountAmount);
   rows.push("সর্বমোট     : ৳"+m.total);
   if(m.note){ rows.push(sline); rows.push(m.note); }
   rows.push(dline);
@@ -1218,6 +1457,7 @@ window.showMemoView=function(orderId){
         <div class="atm-memo-divider dashed"></div>
         <div class="atm-memo-row"><span>সাবটোটাল</span><b>৳${m.subtotal}</b></div>
         ${m.discount?`<div class="atm-memo-row"><span>ছাড়</span><b>−৳${m.discount}</b></div>`:""}
+        ${m.promo&&m.promo.discountAmount?`<div class="atm-memo-row"><span>প্রোমো ছাড় (${esc(m.promo.code)})</span><b>−৳${m.promo.discountAmount}</b></div>`:""}
         <div class="atm-memo-row atm-memo-amount"><span>সর্বমোট প্রদেয়</span><b>৳${m.total}</b></div>
         ${m.note?`<div class="atm-memo-divider dashed"></div><div class="atm-memo-row" style="display:block;"><span>${esc(m.note)}</span></div>`:""}
         <div class="atm-memo-divider"></div>
