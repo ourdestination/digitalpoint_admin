@@ -297,6 +297,7 @@
       <button data-tab="reviews">কাস্টমার রিভিউ</button>
       <button data-tab="records">কাস্টমার রেকর্ড</button>
       <button data-tab="chats">কাস্টমার সাপোর্ট (লাইভ চ্যাট)</button>
+      <button data-tab="complaints">অভিযোগ / পরামর্শ</button>
       <button data-tab="site">ওয়েবসাইট তথ্য</button>
       <button data-tab="admins">অ্যাডমিন অ্যাকাউন্ট</button>
     </aside>
@@ -311,6 +312,7 @@
 import {initializeApp, deleteApp} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
 import {getAuth,signInWithEmailAndPassword,createUserWithEmailAndPassword,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 import {getDatabase,ref,push,set,update,remove,onValue,get} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js";
+import {getMessaging,getToken,isSupported} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-messaging.js";
 
 /* ---- Firebase (same project as the public site / index_5, isolated under "dorkhast") ---- */
 const firebaseConfig = {
@@ -327,6 +329,36 @@ const AUTH_DOMAIN_SUFFIX = "@dorkhast.local";
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getDatabase(app);
+
+/* ---- FCM ব্যাকগ্রাউন্ড পুশ নোটিফিকেশন (সাইট/অ্যাপ বন্ধ থাকলেও ফোনে আসবে) ----
+   টোকেন Firebase-এ সেভ হয়; সার্ভারের Cloud Function সেই টোকেনে পুশ পাঠায় ---- */
+const FCM_VAPID_KEY = "BGiiqJ9iM-aLnbkrIYRofgeAcThOtSMG9ayGuR9r8fEDIx2kM-wN66y8YqFXBYIse6ntlmZeIAvnW_kkSGOxcQ8";
+let __fcmToken=null, __fcmPath=null;
+async function fcmRegister(basePath){
+  try{
+    if(!window.Notification || Notification.permission!=="granted") return;
+    if(!("serviceWorker" in navigator) || !(await isSupported())) return;
+    const reg = await navigator.serviceWorker.register("./firebase-messaging-sw.js");
+    await navigator.serviceWorker.ready;
+    const token = await getToken(getMessaging(app), {vapidKey:FCM_VAPID_KEY, serviceWorkerRegistration:reg});
+    if(!token) return;
+    if(__fcmToken && __fcmPath && (__fcmToken!==token || __fcmPath!==basePath)) await fcmUnregister();
+    await set(ref(db, basePath+"/"+token), {at:Date.now(), ua:navigator.userAgent.slice(0,150)});
+    __fcmToken=token; __fcmPath=basePath; window.__fcmReady=true;
+  }catch(e){ console.warn("FCM setup failed:", e); }
+}
+async function fcmUnregister(){
+  const t=__fcmToken, p=__fcmPath;
+  if(!t || !p) return;
+  __fcmToken=null; __fcmPath=null; window.__fcmReady=false;
+  try{ await remove(ref(db, p+"/"+t)); }catch(e){}
+}
+const FCM_ADMIN_PATH = "dorkhast/fcmTokens/admin";
+function fcmSetupAdmin(){
+  if(!window.Notification) return;
+  if(Notification.permission==="default"){ Notification.requestPermission().then(()=>fcmRegister(FCM_ADMIN_PATH)).catch(()=>{}); }
+  else fcmRegister(FCM_ADMIN_PATH);
+}
 
 const $=x=>document.getElementById(x);
 const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
@@ -443,10 +475,10 @@ window.handleTrackLinkClick=function(orderId, phone){
   sendTrackingLink(orderId, phone);
 };
 
-let D={orders:{}, site:{}, stats:{}, liveCount:0, chats:{}, promoHolders:{}, deviceInbox:{}}, offs=[], activeTab="dashboard", siteLoaded=false, seededDefaults=false;
+let D={orders:{}, site:{}, stats:{}, liveCount:0, chats:{}, complaints:{}, promoHolders:{}, deviceInbox:{}}, offs=[], activeTab="dashboard", siteLoaded=false, seededDefaults=false;
 let activePromoHolderId=null;
 let activeChatPhone=null, __chatConvUnsub=null;
-let notifications=[], knownOrderIds=null, knownPaymentRequestIds=null;
+let notifications=[], knownOrderIds=null, knownPaymentRequestIds=null, knownChatStamps=null, knownComplaintIds=null;
 
 /* ---- notification sound (Web Audio, no external file needed) ---- */
 let audioCtx=null;
@@ -455,7 +487,7 @@ function getAudioCtx(){
   return audioCtx;
 }
 document.addEventListener("click", ()=>{ try{ const c=getAudioCtx(); if(c.state==="suspended") c.resume(); }catch(e){} });
-function playNotifSound(){
+function playNotifSound(times){
   try{
     const ctx=getAudioCtx();
     const tone=(freq,start,dur)=>{
@@ -468,7 +500,7 @@ function playNotifSound(){
       o.start(ctx.currentTime+start); o.stop(ctx.currentTime+start+dur+0.05);
     };
     // play the two-tone chime 5 times in a row so the alert is hard to miss
-    const repeatCount = 5;
+    const repeatCount = times || 5;
     const cycleDuration = 0.65;
     for(let c=0;c<repeatCount;c++){
       const base = c*cycleDuration;
@@ -491,8 +523,8 @@ function renderNotifUI(){
   else{ badge.classList.add("hidden"); }
   list.innerHTML = notifications.length ? notifications.map((n,i)=>`
     <button type="button" class="notif-item ${n.read?"":"unread"}" onclick="openNotif(${i})">
-      <h5>${esc(n.name||"গ্রাহক")} ${n.type==="payment"?"":("— "+esc(n.service||""))}</h5>
-      <p>${n.type==="payment"?`পেমেন্ট ভেরিফিকেশন রিকোয়েস্ট এসেছে — ৳${esc(n.amount||0)} (${esc(PAYMENT_LABEL[n.method]||n.method||"")})`:"নতুন অর্ডার এসেছে"} &nbsp;·&nbsp; ${fmt(n.at)}</p>
+      <h5>${esc(n.name||"গ্রাহক")} ${n.type==="order"?("— "+esc(n.service||"")):(n.type==="chat"?"— নতুন মেসেজ":(n.type==="complaint"?("— নতুন "+(n.kind==="suggestion"?"পরামর্শ":"অভিযোগ")):""))}</h5>
+      <p>${n.type==="payment"?`পেমেন্ট ভেরিফিকেশন রিকোয়েস্ট এসেছে — ৳${esc(n.amount||0)} (${esc(PAYMENT_LABEL[n.method]||n.method||"")})`:(n.type==="chat"?`💬 ${esc(n.text||"")}`:(n.type==="complaint"?`📝 ${esc(n.text||"")}`:"নতুন অর্ডার এসেছে"))} &nbsp;·&nbsp; ${fmt(n.at)}</p>
     </button>`).join("") : `<div class="notif-empty">এখনও কোনো নতুন নোটিফিকেশন নেই।</div>`;
 }
 window.toggleNotifPanel=function(e){
@@ -512,6 +544,17 @@ window.openNotif=function(i){
   n.read=true;
   renderNotifUI();
   $("notifPanel").classList.add("hidden");
+  if(n.type==="complaint"){
+    const cb=document.querySelector('.side button[data-tab="complaints"]');
+    if(cb) cb.click();
+    return;
+  }
+  if(n.type==="chat"){
+    const chatsTabBtn=document.querySelector('.side button[data-tab="chats"]');
+    if(chatsTabBtn) chatsTabBtn.click();
+    setTimeout(()=>openChatThread(n.phone), 50);
+    return;
+  }
   const ordersTabBtn=document.querySelector('[data-tab="orders"]');
   if(ordersTabBtn) ordersTabBtn.click();
   if(n.type==="payment"){
@@ -546,24 +589,22 @@ $("loginForm").onsubmit = async e=>{
       toast("লগইন ব্যর্থ: "+err.message);
   }
 };
-$("logoutBtn").onclick=()=>signOut(auth);
+$("logoutBtn").onclick=async()=>{ await fcmUnregister(); signOut(auth); };
 
 onAuthStateChanged(auth, u=>{
   if(u){
     $("login").classList.add("hidden");
     $("app").classList.remove("hidden");
     $("whoami").textContent = u.email.replace(AUTH_DOMAIN_SUFFIX,"");
-    knownOrderIds=null; knownPaymentRequestIds=null; notifications=[]; renderNotifUI();
-    if(window.Notification && Notification.permission==="default"){
-      Notification.requestPermission().catch(()=>{});
-    }
+    knownOrderIds=null; knownPaymentRequestIds=null; knownChatStamps=null; knownComplaintIds=null; notifications=[]; renderNotifUI();
+    fcmSetupAdmin();
     listenAll();
     render("dashboard");
   }else{
     $("login").classList.remove("hidden");
     $("app").classList.add("hidden");
     offs.forEach(f=>f()); offs=[];
-    knownOrderIds=null; knownPaymentRequestIds=null; notifications=[]; renderNotifUI();
+    knownOrderIds=null; knownPaymentRequestIds=null; knownChatStamps=null; knownComplaintIds=null; notifications=[]; renderNotifUI();
   }
 });
 
@@ -586,7 +627,7 @@ function listenAll(){
         renderNotifUI();
         const bell=$("notifBtn");
         if(bell){ bell.classList.add("ring"); setTimeout(()=>bell.classList.remove("ring"), 1200); }
-        if(window.Notification && Notification.permission==="granted"){
+        if(window.Notification && Notification.permission==="granted" && !window.__fcmReady){
           added.forEach(id=>{
             const o=newOrders[id];
             try{ new Notification("নতুন অর্ডার এসেছে", {body:`${o.name} — ${o.service}`}); }catch(e){}
@@ -608,8 +649,38 @@ function listenAll(){
   offs.push(onValue(ref(db,"dorkhast/presence"), s=>{ const v=s.val(); D.liveCount=v?Object.keys(v).length:0; render(activeTab); }));
   offs.push(onValue(ref(db,"dorkhast/chats"), s=>{
     D.chats=s.val()||{};
+    detectNewChatMessages();
     updateChatNavBadge();
     if(activeTab==="chats"){ renderChatInboxList(); renderChatConversation(); }
+  }));
+  offs.push(onValue(ref(db,"dorkhast/complaints"), s=>{
+    D.complaints=s.val()||{};
+    const ids=Object.keys(D.complaints);
+    if(knownComplaintIds===null){
+      knownComplaintIds=new Set(ids); // লগইনের পর প্রথম স্ন্যাপশট — আগেরগুলোর জন্য নোটিফাই নয়
+    }else{
+      const added=ids.filter(id=>!knownComplaintIds.has(id));
+      if(added.length){
+        added.forEach(id=>{
+          const c=D.complaints[id];
+          notifications.unshift({type:"complaint", kind:c.type, name:c.name||"কাস্টমার", text:c.message||"", at:c.at||Date.now(), read:false});
+        });
+        if(notifications.length>40) notifications.length=40;
+        playNotifSound(3);
+        renderNotifUI();
+        const bell=$("notifBtn");
+        if(bell){ bell.classList.add("ring"); setTimeout(()=>bell.classList.remove("ring"), 1200); }
+        if(window.Notification && Notification.permission==="granted" && !window.__fcmReady){
+          added.forEach(id=>{
+            const c=D.complaints[id];
+            try{ new Notification("নতুন "+(c.type==="suggestion"?"পরামর্শ":"অভিযোগ")+" — "+(c.name||""), {body:c.message||""}); }catch(e){}
+          });
+        }
+      }
+      knownComplaintIds=new Set(ids);
+    }
+    updateComplaintNavBadge();
+    if(activeTab==="complaints"){ $("main").innerHTML=complaintsView(); markComplaintsSeen(); }
   }));
   offs.push(onValue(ref(db,"dorkhast/deviceInbox"), s=>{
     D.deviceInbox=s.val()||{};
@@ -633,7 +704,7 @@ function listenAll(){
         renderNotifUI();
         const bell=$("notifBtn");
         if(bell){ bell.classList.add("ring"); setTimeout(()=>bell.classList.remove("ring"), 1200); }
-        if(window.Notification && Notification.permission==="granted"){
+        if(window.Notification && Notification.permission==="granted" && !window.__fcmReady){
           added.forEach(id=>{
             const r=reqs[id];
             const o=D.orders[r.orderId];
@@ -644,6 +715,35 @@ function listenAll(){
       knownPaymentRequestIds=new Set(newIds);
     }
   }));
+}
+
+/* ---- কাস্টমারের নতুন চ্যাট মেসেজ এলে নোটিফিকেশন + সাউন্ড ---- */
+function detectNewChatMessages(){
+  const stamps={}, fresh=[];
+  Object.entries(D.chats||{}).forEach(([phone,c])=>{
+    const m=c&&c.meta; if(!m) return;
+    const t=Number(m.lastMessageAt||0);
+    stamps[phone]=t;
+    // লগইনের পর প্রথম স্ন্যাপশটে (knownChatStamps===null) আগের মেসেজের জন্য নোটিফাই করা হয় না
+    if(knownChatStamps!==null && m.unreadForAdmin && t>(knownChatStamps[phone]||0)) fresh.push({phone,m});
+  });
+  knownChatStamps=stamps;
+  if(!fresh.length) return;
+  fresh.forEach(({phone,m})=>{
+    const viewing = activeTab==="chats" && activeChatPhone===phone;
+    notifications.unshift({type:"chat", phone, name:m.name||phone, text:m.lastMessage||"", at:m.lastMessageAt||Date.now(), read:viewing});
+    if(viewing) markChatReadForAdmin(phone); // কথোপকথন খোলা থাকলে সাথে সাথে পঠিত ধরা হয়
+  });
+  if(notifications.length>40) notifications.length=40;
+  playNotifSound(3);
+  renderNotifUI();
+  const bell=$("notifBtn");
+  if(bell){ bell.classList.add("ring"); setTimeout(()=>bell.classList.remove("ring"), 1200); }
+  if(window.Notification && Notification.permission==="granted" && !window.__fcmReady){
+    fresh.forEach(({m,phone})=>{
+      try{ new Notification("নতুন মেসেজ — "+(m.name||phone), {body:m.lastMessage||""}); }catch(e){}
+    });
+  }
 }
 
 /* ---- সব unprocessed SMS-এর জন্য অটো-ভেরিফাই আবার চালানো হয় —
@@ -753,6 +853,7 @@ function render(tab){
   else if(tab==="reviews") m.innerHTML=reviewsView();
   else if(tab==="records") m.innerHTML=recordsView();
   else if(tab==="chats"){ m.innerHTML=chatsView(); if(activeChatPhone) markChatReadForAdmin(activeChatPhone); }
+  else if(tab==="complaints"){ m.innerHTML=complaintsView(); markComplaintsSeen(); }
   else if(tab==="site") m.innerHTML=siteView();
   else if(tab==="admins") m.innerHTML=adminsView();
 }
@@ -1840,6 +1941,49 @@ window.saveNotice=async function(id){
 };
 
 /* ---- customer reviews (moderation) ---- */
+/* ---- অভিযোগ / পরামর্শ ---- */
+let complaintFilter="all";
+function updateComplaintNavBadge(){
+  const unseen=Object.values(D.complaints||{}).filter(c=>c && !c.adminSeen).length;
+  const btn=document.querySelector('.side button[data-tab="complaints"]');
+  if(btn) btn.textContent="অভিযোগ / পরামর্শ"+(unseen?` (${unseen})`:"");
+}
+function markComplaintsSeen(){
+  const updates={};
+  Object.entries(D.complaints||{}).forEach(([id,c])=>{ if(c && !c.adminSeen) updates[`dorkhast/complaints/${id}/adminSeen`]=true; });
+  if(Object.keys(updates).length) update(ref(db),updates).catch(e=>console.error(e));
+}
+window.setComplaintFilter=function(f){ complaintFilter=f; $("main").innerHTML=complaintsView(); };
+function complaintsView(){
+  const all=Object.entries(D.complaints||{}).filter(([,c])=>c).sort((a,b)=>(b[1].at||0)-(a[1].at||0));
+  const nComp=all.filter(([,c])=>c.type!=="suggestion").length, nSug=all.length-nComp;
+  const items=all.filter(([,c])=>complaintFilter==="all"||(complaintFilter==="suggestion"?c.type==="suggestion":c.type!=="suggestion"));
+  const tab=(f,label,n)=>`<button class="btn ${complaintFilter===f?"btn-primary":"btn-soft"} btn-sm" onclick="setComplaintFilter('${f}')">${label} (${bn(n)})</button>`;
+  return `
+  <div class="section-head"><h2>অভিযোগ / পরামর্শ</h2></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">${tab("all","সব",all.length)}${tab("complaint","অভিযোগ",nComp)}${tab("suggestion","পরামর্শ",nSug)}</div>
+  <div class="card">
+    ${items.length?items.map(([id,c])=>{
+      const isSug=c.type==="suggestion";
+      const wa=c.phone?`<a class="wa-icon" href="${esc(waLink(c.phone))}" target="_blank" title="WhatsApp এ মেসেজ করুন" onclick="event.stopPropagation()">${WA_ICON_SVG}</a>`:"";
+      return `<div class="list-item">
+      <div class="info" style="min-width:0;">
+        <h4><span style="display:inline-block;font-size:12px;padding:2px 9px;border-radius:999px;margin-right:6px;background:${isSug?"#DDF0E4":"#FBE9E6"};color:${isSug?"#1B6B3A":"#9B2A1F"};">${isSug?"পরামর্শ":"অভিযোগ"}</span>${esc(c.name||"")}</h4>
+        <p style="white-space:pre-wrap;word-break:break-word;color:var(--ink);">${esc(c.message||"")}</p>
+        <p style="font-size:12.5px;">📞 ${esc(c.phone||"")} ${wa}${c.customerId?` &nbsp;·&nbsp; 🆔 ${esc(c.customerId)}`:""} &nbsp;·&nbsp; ${fmt(c.at)}</p>
+      </div>
+      <div class="list-actions">
+        <button class="btn btn-danger btn-sm" onclick='deleteComplaint("${esc(id)}")'>মুছুন</button>
+      </div>
+    </div>`;}).join(""):`<div class="empty">${all.length?"এই ধরনের কোনো এন্ট্রি নেই।":"এখনও কোনো অভিযোগ বা পরামর্শ জমা পড়েনি।"}</div>`}
+  </div>`;
+}
+window.deleteComplaint=async function(id){
+  if(!confirm("এটি স্থায়ীভাবে মুছে ফেলবেন?")) return;
+  try{ await remove(ref(db,"dorkhast/complaints/"+id)); toast("মুছে ফেলা হয়েছে"); }
+  catch(e){ console.error(e); toast("মুছতে সমস্যা: "+e.message); }
+};
+
 function reviewsView(){
   const items=Object.entries(D.site?.reviews||{}).sort((a,b)=>(b[1].at||0)-(a[1].at||0));
   return `
@@ -2169,7 +2313,8 @@ function siteView(){
     <button class="btn btn-primary btn-sm" onclick="saveMarquee()" style="margin-bottom:20px;">স্ক্রলিং টেক্সট সংরক্ষণ করুন</button>
 
     <h4 style="margin:20px 0 12px;">যোগাযোগের তথ্য</h4>
-    <div class="field"><label>WhatsApp নম্বর (দেশের কোড সহ, যেমন: 8801712345678)</label><input id="cWa" value="${esc(contact.whatsapp||"")}"></div>
+    <div class="field"><label>WhatsApp নম্বর (দেশের কোড সহ, যেমন: 8801712345678 — ফ্লোটিং WhatsApp বাটনেও এটাই ব্যবহার হবে)</label><input id="cWa" value="${esc(contact.whatsapp||"")}"></div>
+    <div class="field"><label>Facebook পেজ/প্রোফাইল লিংক (ফ্লোটিং Facebook বাটনে যাবে — খালি রাখলে বাটন লুকানো থাকবে)</label><input id="cFb" value="${esc(contact.facebook||"")}" placeholder="যেমন: https://www.facebook.com/yourpage"></div>
     <div class="field"><label>প্রদর্শিত ফোন নম্বর</label><input id="cPhone" value="${esc(contact.phoneDisplay||"")}"></div>
     <div class="field"><label>ইমেইল</label><input id="cEmail" value="${esc(contact.email||"")}"></div>
     <div class="field"><label>ঠিকানা</label><input id="cAddr" value="${esc(contact.address||"")}"></div>
@@ -2267,7 +2412,7 @@ window.saveSiteInfo=async function(){
     await update(ref(db,"dorkhast/site"), {
       hero:{title:$("heroTitle").value.trim(), subtitle:$("heroSub").value.trim()},
       contact:{
-        whatsapp:$("cWa").value.trim(), phoneDisplay:$("cPhone").value.trim(),
+        whatsapp:$("cWa").value.trim(), facebook:$("cFb").value.trim(), phoneDisplay:$("cPhone").value.trim(),
         email:$("cEmail").value.trim(), address:$("cAddr").value.trim(),
         paymentBkash:$("cPayBkash").value.trim(), paymentRocket:$("cPayRocket").value.trim(), paymentNagad:$("cPayNagad").value.trim()
       }
