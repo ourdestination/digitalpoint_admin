@@ -21,7 +21,7 @@
   }
   *{box-sizing:border-box;}
   /* সংখ্যা (০-৯) গুলো আলাদা, বেশি স্পষ্ট একটা বাংলা ফন্টে দেখানোর জন্য — bnDigits() এই class দিয়ে সংখ্যা wrap করে */
-  .bn-digit{font-family:'Noto Sans Bengali','Hind Siliguri',sans-serif;font-variant-numeric:normal;}
+  .bn-digit{font-family:inherit;font-weight:inherit;font-size:inherit;font-variant-numeric:normal;}
   body{margin:0;background:
       radial-gradient(circle at 8% 0%, rgba(124,58,237,.10), transparent 40%),
       radial-gradient(circle at 95% 12%, rgba(236,72,153,.10), transparent 40%),
@@ -106,7 +106,7 @@
   .stat-card:nth-child(6n+4){border-top-color:var(--accent4);}
   .stat-card:nth-child(6n+5){border-top-color:var(--accent5);}
   .stat-card:nth-child(6n+6){border-top-color:var(--accent6);}
-  .stat-card b{font-family:'Tiro Bangla',serif;font-size:26px;display:block;color:var(--ink);}
+  .stat-card b{font-family:'Hind Siliguri',sans-serif;font-size:52px;font-weight:700;line-height:1.2;display:block;color:var(--ink);font-variant-numeric:normal;}
   .stat-card span{font-size:12.5px;color:var(--ink-soft);}
 
   .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:20px;box-shadow:var(--shadow);}
@@ -332,6 +332,7 @@ const $=x=>document.getElementById(x);
 const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
 // বাংলা সংখ্যা (০-৯) গুলো আলাদা, স্পষ্ট ফন্টে (Noto Sans Bengali) দেখানোর জন্য span দিয়ে wrap করে
 const bnDigits=s=>String(s).replace(/[০-৯]+/g,m=>`<span class="bn-digit">${m}</span>`);
+const bn=x=>bnDigits(Number(x||0).toLocaleString("bn-BD"));
 const fmt=x=>x?bnDigits(new Date(x).toLocaleString("bn-BD",{dateStyle:"medium",timeStyle:"short"})):"—";
 
 const STATUS_LABEL = {pending:"অপেক্ষমান", processing:"কাজ চলছে", ready:"প্রস্তুত (ডেলিভারির অপেক্ষায়)", delivered:"ডেলিভারি সম্পন্ন", cancelled:"বাতিল"};
@@ -785,18 +786,18 @@ function dashboard(){
   return `
   <div class="section-head"><h2>ড্যাশবোর্ড</h2></div>
   <div class="stat-grid">
-    <div class="stat-card"><b>${all.length}</b><span>মোট অর্ডার</span></div>
-    <div class="stat-card"><b>${count('pending')}</b><span>অপেক্ষমান</span></div>
-    <div class="stat-card"><b>${count('processing')}</b><span>কাজ চলছে</span></div>
-    <div class="stat-card"><b>${count('ready')}</b><span>ডেলিভারির অপেক্ষায়</span></div>
-    <div class="stat-card"><b>${count('delivered')}</b><span>সম্পন্ন</span></div>
-    <div class="stat-card"><b>${money(rev.day)}</b><span>আজকের আয় (ভেরিফাইড পেমেন্ট)</span></div>
-    <div class="stat-card"><b>${money(rev.month)}</b><span>এই মাসের আয় (ভেরিফাইড পেমেন্ট)</span></div>
-    <div class="stat-card"><b>${money(rev.year)}</b><span>এই বছরের আয় (ভেরিফাইড পেমেন্ট)</span></div>
+    <div class="stat-card"><b>${bn(all.length)}</b><span>মোট অর্ডার</span></div>
+    <div class="stat-card"><b>${bn(count('pending'))}</b><span>অপেক্ষমান</span></div>
+    <div class="stat-card"><b>${bn(count('processing'))}</b><span>কাজ চলছে</span></div>
+    <div class="stat-card"><b>${bn(count('ready'))}</b><span>ডেলিভারির অপেক্ষায়</span></div>
+    <div class="stat-card"><b>${bn(count('delivered'))}</b><span>সম্পন্ন</span></div>
+    <div class="stat-card"><b>${bn(rev.day)}</b><span>আজকের আয় (ভেরিফাইড পেমেন্ট)</span></div>
+    <div class="stat-card"><b>${bn(rev.month)}</b><span>এই মাসের আয় (ভেরিফাইড পেমেন্ট)</span></div>
+    <div class="stat-card"><b>${bn(rev.year)}</b><span>এই বছরের আয় (ভেরিফাইড পেমেন্ট)</span></div>
     <div class="stat-card"><b>${bnDigits(Number(D.stats.totalVisitors||0).toLocaleString("bn-BD"))}</b><span>মোট ওয়েবসাইট ভিজিটর</span></div>
     <div class="stat-card"><b>${bnDigits(Number(D.liveCount||0).toLocaleString("bn-BD"))}</b><span>লাইভ ভিজিটর (এখন)</span></div>
     <div class="stat-card"><b>${bnDigits(Number(D.stats.totalApkDownloads||0).toLocaleString("bn-BD"))}</b><span>মোট APK ডাউনলোড</span></div>
-    <div class="stat-card"><b>${money(promoDueTotal)}</b><span>প্রোমো হোল্ডার বকেয়া কমিশন</span></div>
+    <div class="stat-card"><b>${bn(promoDueTotal)}</b><span>প্রোমো হোল্ডার বকেয়া কমিশন</span></div>
   </div>
   <div class="section-head" style="margin-top:26px;"><h2 style="font-size:19px;">সাম্প্রতিক অর্ডার</h2></div>
   <div class="orders-grid">
@@ -1121,10 +1122,10 @@ function paymentsView(){
   return `
   <div class="section-head"><h2>পেমেন্ট ভেরিফিকেশন</h2></div>
   <div class="stat-grid" style="margin-bottom:18px;">
-    <div class="stat-card"><b>${online.length}</b><span>পেমেন্ট তথ্য</span></div>
-    <div class="stat-card"><b>${pending.length}</b><span>যাচাই বাকি</span></div>
-    <div class="stat-card"><b>${verified.length}</b><span>ভেরিফাইড</span></div>
-    <div class="stat-card"><b>${money(verified.reduce((s,o)=>s+Number(o.paymentInfo.amount||0),0))}</b><span>ভেরিফাইড মোট</span></div>
+    <div class="stat-card"><b>${bn(online.length)}</b><span>পেমেন্ট তথ্য</span></div>
+    <div class="stat-card"><b>${bn(pending.length)}</b><span>যাচাই বাকি</span></div>
+    <div class="stat-card"><b>${bn(verified.length)}</b><span>ভেরিফাইড</span></div>
+    <div class="stat-card"><b>${bn(verified.reduce((s,o)=>s+Number(o.paymentInfo.amount||0),0))}</b><span>ভেরিফাইড মোট</span></div>
   </div>
   <div class="card">
     <div style="font-size:13px;color:var(--ink-soft);margin-bottom:12px;">SMS-এর সাথে মিলে গেলে পেমেন্ট এখানে স্বয়ংক্রিয়ভাবে ✓ Auto Verified হয়ে যাবে। না মিললে (Android payment monitor অফলাইন থাকলেও) customer-এর দেওয়া payment details দেখে admin নিজে ম্যানুয়ালি verification করতে পারবেন।</div>
@@ -1156,8 +1157,8 @@ function promoCommissionAmount(base, holder){
   if(holder.commissionType==="percent") return Math.round(Number(base||0)*(Number(holder.commissionValue)||0)/100);
   return Number(holder.commissionValue)||0;
 }
-function promoLine(h){ return h.discountType==="percent" ? Number(h.discountValue||0)+"%" : "৳"+Number(h.discountValue||0); }
-function promoCommLine(h){ return h.commissionType==="percent" ? Number(h.commissionValue||0)+"%" : "৳"+Number(h.commissionValue||0); }
+function promoLine(h){ return h.discountType==="percent" ? bn(h.discountValue)+"%" : "৳"+bn(h.discountValue); }
+function promoCommLine(h){ return h.commissionType==="percent" ? bn(h.commissionValue)+"%" : "৳"+bn(h.commissionValue); }
 function promoOrdersFor(holderId){
   return Object.values(D.orders).filter(o=>o.memo && o.memo.promo && o.memo.promo.holderId===holderId).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
 }
@@ -1189,9 +1190,9 @@ function promoView(){
   </div>
   <p style="font-size:13px;color:var(--ink-soft);margin:-8px 0 16px;">কাস্টমার প্রোমো কোড ব্যবহার করলে ক্যাশ মেমো তৈরির সময় সেই কোড বেছে নিলে স্বয়ংক্রিয়ভাবে কাস্টমারের ছাড় যুক্ত হবে এবং প্রোমো হোল্ডারের কমিশন হিসাব হয়ে যাবে। অর্ডারের স্ট্যাটাস "ডেলিভারি সম্পন্ন" হলে তবেই সেই কমিশন "অর্জিত" হিসেবে গণনা হয়।</p>
   <div class="stat-grid" style="margin-bottom:18px;">
-    <div class="stat-card"><b>${holders.length}</b><span>মোট প্রোমো হোল্ডার</span></div>
-    <div class="stat-card"><b>${money(totalPaid)}</b><span>সর্বমোট পরিশোধিত কমিশন</span></div>
-    <div class="stat-card"><b>${money(totalDue)}</b><span>সর্বমোট বকেয়া কমিশন</span></div>
+    <div class="stat-card"><b>${bn(holders.length)}</b><span>মোট প্রোমো হোল্ডার</span></div>
+    <div class="stat-card"><b>${bn(totalPaid)}</b><span>সর্বমোট পরিশোধিত কমিশন</span></div>
+    <div class="stat-card"><b>${bn(totalDue)}</b><span>সর্বমোট বকেয়া কমিশন</span></div>
   </div>
   <div class="card">
     ${rows.length?rows.map(({id,h,st})=>`
@@ -1199,7 +1200,7 @@ function promoView(){
         <div class="info">
           <h4>${esc(h.name)} &nbsp;·&nbsp; <span style="font-family:monospace;color:var(--primary-dark);">${esc(h.code)}</span>${h.active===false?' <span class="badge badge-cancelled">নিষ্ক্রিয়</span>':''}</h4>
           <p>কাস্টমার ছাড়: ${promoLine(h)} &nbsp;·&nbsp; কমিশন: ${promoCommLine(h)}</p>
-          <p>বিক্রয়: ${money(st.totalSales)} (${st.orders.length} অর্ডার) &nbsp;·&nbsp; অর্জিত কমিশন: ${money(st.earnedCommission)} &nbsp;·&nbsp; পরিশোধিত: ${money(st.paid)} &nbsp;·&nbsp; বকেয়া: <b>${money(st.due)}</b></p>
+          <p>বিক্রয়: ${money(st.totalSales)} (${bn(st.orders.length)} অর্ডার) &nbsp;·&nbsp; অর্জিত কমিশন: ${money(st.earnedCommission)} &nbsp;·&nbsp; পরিশোধিত: ${money(st.paid)} &nbsp;·&nbsp; বকেয়া: <b>${money(st.due)}</b></p>
         </div>
         <div class="list-actions">
           <button class="btn btn-soft btn-sm" onclick='openPromoProfile("${id}")'>প্রোফাইল</button>
@@ -1228,13 +1229,13 @@ function promoProfileView(id){
     </div>
   </div>
   <div class="stat-grid" style="margin-bottom:18px;">
-    <div class="stat-card"><b>${st.orders.length}</b><span>মোট অর্ডার (এই কোডে)</span></div>
-    <div class="stat-card"><b>${st.deliveredCount}</b><span>ডেলিভারি সম্পন্ন</span></div>
-    <div class="stat-card"><b>${money(st.totalSales)}</b><span>সর্বমোট বিক্রয়</span></div>
-    <div class="stat-card"><b>${money(st.earnedCommission)}</b><span>অর্জিত কমিশন</span></div>
-    <div class="stat-card"><b>${money(st.pendingCommission)}</b><span>সম্ভাব্য কমিশন (ডেলিভারি বাকি)</span></div>
-    <div class="stat-card"><b>${money(st.paid)}</b><span>পরিশোধিত কমিশন</span></div>
-    <div class="stat-card"><b>${money(st.due)}</b><span>বকেয়া কমিশন</span></div>
+    <div class="stat-card"><b>${bn(st.orders.length)}</b><span>মোট অর্ডার (এই কোডে)</span></div>
+    <div class="stat-card"><b>${bn(st.deliveredCount)}</b><span>ডেলিভারি সম্পন্ন</span></div>
+    <div class="stat-card"><b>${bn(st.totalSales)}</b><span>সর্বমোট বিক্রয়</span></div>
+    <div class="stat-card"><b>${bn(st.earnedCommission)}</b><span>অর্জিত কমিশন</span></div>
+    <div class="stat-card"><b>${bn(st.pendingCommission)}</b><span>সম্ভাব্য কমিশন (ডেলিভারি বাকি)</span></div>
+    <div class="stat-card"><b>${bn(st.paid)}</b><span>পরিশোধিত কমিশন</span></div>
+    <div class="stat-card"><b>${bn(st.due)}</b><span>বকেয়া কমিশন</span></div>
   </div>
   <div class="card" style="margin-bottom:18px;">
     <h3 style="font-size:16px;margin-bottom:6px;">এই কোডে ব্যবহৃত অর্ডারসমূহ</h3>
