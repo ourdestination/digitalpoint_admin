@@ -293,6 +293,7 @@
       <button data-tab="payments">পেমেন্ট ভেরিফিকেশন</button>
       <button data-tab="promo">প্রোমো হোল্ডার</button>
       <button data-tab="services">সেবা ও মূল্য তালিকা</button>
+      <button data-tab="specialServices">স্পেশাল সেবা</button>
       <button data-tab="notices">নোটিশ বোর্ড</button>
       <button data-tab="reviews">কাস্টমার রিভিউ</button>
       <button data-tab="records">কাস্টমার রেকর্ড</button>
@@ -930,6 +931,7 @@ function render(tab){
   else if(tab==="payments") m.innerHTML=paymentsView();
   else if(tab==="promo") m.innerHTML=promoView();
   else if(tab==="services") m.innerHTML=servicesView();
+  else if(tab==="specialServices") m.innerHTML=specialServicesView();
   else if(tab==="notices") m.innerHTML=noticesView();
   else if(tab==="reviews") m.innerHTML=reviewsView();
   else if(tab==="records") m.innerHTML=recordsView();
@@ -1823,40 +1825,64 @@ async function ensureDefaultServices(){
   DEFAULT_SERVICES_ADMIN.forEach((s,i)=>{ payload["seed"+i]={...s, sort:(i+1)*10}; });
   try{ await set(ref(db,"dorkhast/site/services"), payload); }catch(e){ console.error(e); }
 }
-function servicesView(){
-  ensureDefaultServices();
-  const items=Object.entries(D.site?.services||{}).sort((a,b)=>(a[1].sort||0)-(b[1].sort||0));
+/* Two card lists share ONE code path: "services" (সেবা ও মূল্য তালিকা) and
+   "specialCards" (স্পেশাল সেবা — the customer panel reads dorkhast/site/specialCards). Same fields
+   for both: title, price, discountPrice, discount, desc, sort. specialCards also has image (small
+   icon shown beside the title) and link (if set, the customer's "অর্ডার করুন" opens it instead of
+   the order form). Stored at dorkhast/site/<kind>. */
+const SVC_KINDS={
+  services:{
+    head:"সেবা ও মূল্য তালিকা", add:"＋ নতুন সেবা", modalNew:"নতুন সেবা", modalEdit:"সেবা সম্পাদনা", saved:"সেবা সংরক্ষণ হয়েছে ✓",
+    note:"ওয়েবসাইটে সেবাগুলো কার্ড আকারে দেখানো হয় (মূল দাম, ছাড়ের দাম, ছাড়ের ব্যাজ ও বিবরণ/প্রয়োজনীয় তথ্য সহ) — কার্ডের ⠿ হ্যান্ডেল ধরে টেনে (ড্র্যাগ করে) নতুন জায়গায় ছেড়ে দিন, অথবা ↑ ↓ বাটন দিয়ে ক্রম পরিবর্তন করুন।",
+    empty:"সেবা তালিকা লোড হচ্ছে..."
+  },
+  specialCards:{
+    head:"স্পেশাল সেবা", add:"＋ নতুন স্পেশাল সেবা", modalNew:"নতুন স্পেশাল সেবা", modalEdit:"স্পেশাল সেবা সম্পাদনা", saved:"স্পেশাল সেবা সংরক্ষণ হয়েছে ✓",
+    note:"ওয়েবসাইটের \"স্পেশাল সেবা\" সেকশনে এই কার্ডগুলো দেখানো হয় (মূল দাম, ছাড়ের দাম, ছাড়ের ব্যাজ ও বিবরণ/প্রয়োজনীয় তথ্য সহ) — কার্ডের ⠿ হ্যান্ডেল ধরে টেনে (ড্র্যাগ করে) নতুন জায়গায় ছেড়ে দিন, অথবা ↑ ↓ বাটন দিয়ে ক্রম পরিবর্তন করুন।",
+    empty:"এখনো কোনো স্পেশাল সেবা যোগ করা হয়নি। উপরের \"নতুন স্পেশাল সেবা\" বাটন দিয়ে যোগ করুন।"
+  }
+};
+function svcItems(kind){
+  return Object.entries(D.site?.[kind]||{}).sort((a,b)=>(a[1].sort||0)-(b[1].sort||0));
+}
+function servicesView(){ ensureDefaultServices(); return svcView("services"); }
+function specialServicesView(){ return svcView("specialCards"); }
+function svcView(kind){
+  const L=SVC_KINDS[kind];
+  const items=svcItems(kind);
   return `
-  <div class="section-head"><h2>সেবা ও মূল্য তালিকা</h2><button class="btn btn-primary btn-sm" onclick="addService()">＋ নতুন সেবা</button></div>
-  <p style="font-size:13px;color:var(--ink-soft);margin:-8px 0 16px;">ওয়েবসাইটে সেবাগুলো কার্ড আকারে দেখানো হয় (মূল দাম, ছাড়ের দাম, ছাড়ের ব্যাজ ও বিবরণ/প্রয়োজনীয় তথ্য সহ) — কার্ডের ⠿ হ্যান্ডেল ধরে টেনে (ড্র্যাগ করে) নতুন জায়গায় ছেড়ে দিন, অথবা ↑ ↓ বাটন দিয়ে ক্রম পরিবর্তন করুন।</p>
+  <div class="section-head"><h2>${L.head}</h2><button class="btn btn-primary btn-sm" onclick='addService("${kind}")'>${L.add}</button></div>
+  <p style="font-size:13px;color:var(--ink-soft);margin:-8px 0 16px;">${L.note}</p>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;">
     ${items.length?items.map(([id,s],i)=>`<div class="card svc-card" draggable="true" data-id="${id}"
-        ondragstart='svDragStart(event,"${id}")' ondragover='svDragOver(event)' ondragleave='svDragLeave(event)' ondrop='svDrop(event,"${id}")' ondragend='svDragEnd(event)'
+        ondragstart='svDragStart(event,"${kind}","${id}")' ondragover='svDragOver(event,"${kind}")' ondragleave='svDragLeave(event)' ondrop='svDrop(event,"${kind}","${id}")' ondragend='svDragEnd(event)'
         style="position:relative;border:2px solid var(--line);padding:16px;">
       ${s.discount?`<div style="position:absolute;top:10px;right:10px;background:#e0342b;color:#fff;font-size:11px;font-weight:700;padding:4px 8px;border-radius:6px;text-align:center;line-height:1.2;">${esc(s.discount)}</div>`:""}
       <div class="svc-drag-handle" title="টেনে সরান" style="position:absolute;top:8px;left:6px;">⠿</div>
-      <h4 style="font-size:15.5px;margin:0 0 8px;padding-left:20px;padding-right:56px;">${i+1}. ${esc(s.title)}</h4>
+      <h4 style="font-size:15.5px;margin:0 0 8px;padding-left:20px;padding-right:56px;">${i+1}. ${s.image?`<img src="${esc(s.image)}" alt="" style="height:22px;width:22px;object-fit:contain;border-radius:5px;vertical-align:-5px;margin-right:6px;">`:""}${esc(s.title)}</h4>
       <div style="margin-bottom:6px;">
         ${s.discountPrice?`<span style="text-decoration:line-through;color:var(--ink-soft);font-size:13px;margin-right:6px;">${esc(s.price)}</span><span style="color:#e0342b;font-weight:700;font-size:17px;">${esc(s.discountPrice)}</span>`:`<span style="color:var(--gold);font-weight:700;font-size:17px;">${esc(s.price)}</span>`}
       </div>
       ${s.desc?`<p style="font-size:13px;color:var(--ink-soft);margin-top:6px;white-space:pre-line;">${esc(s.desc)}</p>`:""}
+      ${s.link?`<p style="font-size:12px;color:var(--ink-soft);margin-top:6px;word-break:break-all;">🔗 ${esc(s.link)}</p>`:""}
       <div class="list-actions" style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;">
-        <button class="btn btn-soft btn-sm" title="উপরে সরান" ${i===0?"disabled":""} onclick='moveService("${id}",-1)'>↑</button>
-        <button class="btn btn-soft btn-sm" title="নিচে সরান" ${i===items.length-1?"disabled":""} onclick='moveService("${id}",1)'>↓</button>
-        <button class="btn btn-soft btn-sm" onclick='editService("${id}")'>সম্পাদনা</button>
-        <button class="btn btn-danger btn-sm" onclick='deleteEntry("services","${id}")'>মুছুন</button>
+        <button class="btn btn-soft btn-sm" title="উপরে সরান" ${i===0?"disabled":""} onclick='moveService("${kind}","${id}",-1)'>↑</button>
+        <button class="btn btn-soft btn-sm" title="নিচে সরান" ${i===items.length-1?"disabled":""} onclick='moveService("${kind}","${id}",1)'>↓</button>
+        <button class="btn btn-soft btn-sm" onclick='editService("${kind}","${id}")'>সম্পাদনা</button>
+        <button class="btn btn-danger btn-sm" onclick='deleteEntry("${kind}","${id}")'>মুছুন</button>
       </div>
-    </div>`).join(""):`<div class="empty">সেবা তালিকা লোড হচ্ছে...</div>`}
+    </div>`).join(""):`<div class="empty">${L.empty}</div>`}
   </div>`;
 }
-let svcDragSrcId=null;
-window.svDragStart=function(ev,id){
-  svcDragSrcId=id;
+let svcDragSrcId=null, svcDragKind=null;
+window.svDragStart=function(ev,kind,id){
+  svcDragSrcId=id; svcDragKind=kind;
   ev.dataTransfer.effectAllowed="move";
   try{ ev.dataTransfer.setData("text/plain", id); }catch(e){}
   ev.currentTarget.classList.add("dragging");
 };
-window.svDragOver=function(ev){
+window.svDragOver=function(ev,kind){
+  if(svcDragKind!==kind) return; // don't allow dropping across the two lists
   ev.preventDefault();
   ev.dataTransfer.dropEffect="move";
   ev.currentTarget.classList.add("drag-over");
@@ -1864,33 +1890,32 @@ window.svDragOver=function(ev){
 window.svDragLeave=function(ev){
   ev.currentTarget.classList.remove("drag-over");
 };
-window.svDrop=async function(ev,targetId){
+window.svDrop=async function(ev,kind,targetId){
   ev.preventDefault();
   ev.currentTarget.classList.remove("drag-over");
-  const srcId=svcDragSrcId;
-  svcDragSrcId=null;
-  if(!srcId||srcId===targetId) return;
-  await reorderServices(srcId,targetId);
+  const srcId=svcDragSrcId, srcKind=svcDragKind;
+  svcDragSrcId=null; svcDragKind=null;
+  if(!srcId||srcId===targetId||srcKind!==kind) return;
+  await reorderServices(kind,srcId,targetId);
 };
 window.svDragEnd=function(ev){
   ev.currentTarget.classList.remove("dragging");
   document.querySelectorAll(".svc-card.drag-over").forEach(el=>el.classList.remove("drag-over"));
 };
-async function reorderServices(srcId,targetId){
-  const items=Object.entries(D.site?.services||{}).sort((a,b)=>(a[1].sort||0)-(b[1].sort||0));
-  const ids=items.map(([id])=>id);
+async function reorderServices(kind,srcId,targetId){
+  const ids=svcItems(kind).map(([id])=>id);
   const fromIdx=ids.indexOf(srcId), toIdx=ids.indexOf(targetId);
   if(fromIdx<0||toIdx<0||fromIdx===toIdx) return;
   ids.splice(fromIdx,1);
   ids.splice(toIdx,0,srcId);
   try{
     const updates={};
-    ids.forEach((id,i)=>{ updates[`dorkhast/site/services/${id}/sort`]=(i+1)*10; });
+    ids.forEach((id,i)=>{ updates[`dorkhast/site/${kind}/${id}/sort`]=(i+1)*10; });
     await update(ref(db), updates);
   }catch(e){ toast("ক্রম পরিবর্তন ব্যর্থ: "+e.message); }
 }
-window.moveService=async function(id, dir){
-  const items=Object.entries(D.site?.services||{}).sort((a,b)=>(a[1].sort||0)-(b[1].sort||0));
+window.moveService=async function(kind, id, dir){
+  const items=svcItems(kind);
   const idx=items.findIndex(([k])=>k===id);
   const swapIdx=idx+dir;
   if(idx<0||swapIdx<0||swapIdx>=items.length) return;
@@ -1898,16 +1923,32 @@ window.moveService=async function(id, dir){
   const sortA=sA.sort||0, sortB=sB.sort||0;
   try{
     const updates={};
-    updates[`dorkhast/site/services/${idA}/sort`]=sortB;
-    updates[`dorkhast/site/services/${idB}/sort`]=sortA;
+    updates[`dorkhast/site/${kind}/${idA}/sort`]=sortB;
+    updates[`dorkhast/site/${kind}/${idB}/sort`]=sortA;
     await update(ref(db), updates);
   }catch(e){ toast("ক্রম পরিবর্তন ব্যর্থ: "+e.message); }
 };
-window.addService=()=>serviceModal();
-window.editService=id=>serviceModal(id, D.site.services[id]);
-function serviceModal(id, s){
+window.addService=kind=>serviceModal(kind);
+window.editService=(kind,id)=>serviceModal(kind, id, D.site[kind][id]);
+let svcModalImage="";
+window.svPickImage=async function(){
+  const f=$("svImageFile").files && $("svImageFile").files[0];
+  if(!f) return;
+  if(!f.type.startsWith("image/")) return toast("শুধুমাত্র ছবি ফাইল দিন");
+  try{ svcModalImage=await resizeImageToDataURL(f, 64); svRefreshImagePreview(); }
+  catch(e){ toast(e.message); }
+};
+window.svClearImage=function(){ svcModalImage=""; const i=$("svImageFile"); if(i) i.value=""; svRefreshImagePreview(); };
+function svRefreshImagePreview(){
+  const box=$("svImagePreview"); if(!box) return;
+  box.innerHTML=svcModalImage?`<img src="${svcModalImage}" alt="" style="height:36px;width:36px;object-fit:contain;border:1px solid var(--line);border-radius:6px;background:#fff;"> <button type="button" class="btn btn-danger btn-sm" onclick="svClearImage()">ছবি মুছুন</button>`:"";
+}
+function serviceModal(kind, id, s){
   s=s||{};
-  modal(id?"সেবা সম্পাদনা":"নতুন সেবা", `
+  const L=SVC_KINDS[kind];
+  const isSpecial=(kind==="specialCards");
+  svcModalImage=isSpecial?(s.image||""):"";
+  modal(id?L.modalEdit:L.modalNew, `
     <div class="field"><label>নাম</label><input id="svTitle" value="${esc(s.title||"")}" placeholder="যেমন: ভর্তির আবেদন"></div>
     <div class="field"><label>মূল্য (ছাড় না থাকলে এটিই মূল প্রদর্শিত মূল্য)</label><input id="svPrice" value="${esc(s.price||"")}" placeholder="যেমন: ১০০"></div>
     <div class="field"><label>ছাড়ের পর মূল্য (ঐচ্ছিক — দিলে উপরের মূল্য কাটা দাগ দিয়ে দেখাবে)</label><input id="svDiscountPrice" value="${esc(s.discountPrice||"")}" placeholder="যেমন: ৮০"></div>
@@ -1915,19 +1956,28 @@ function serviceModal(id, s){
     <div class="field"><label>বিবরণ / প্রয়োজনীয় তথ্য (প্রতি লাইনে একটি পয়েন্ট লিখুন)</label><textarea id="svDesc" placeholder="যেমন:\nজাতীয় পরিচয়পত্র\nএকাডেমিক সার্টিফিকেট">${esc(s.desc||"")}</textarea>
       <p style="font-size:12px;color:var(--ink-soft);margin:4px 0 0;">এই লেখাটাই কার্ডের বিবরণ হিসেবে এবং অর্ডার ফর্মের "প্রয়োজনীয় তথ্য" বক্সে দেখানো হয়।</p>
     </div>
-    <button class="btn btn-primary btn-wide" onclick='saveService("${id||""}")'>সংরক্ষণ করুন</button>
+    ${isSpecial?`
+    <div class="field"><label>আইকন ছবি (ঐচ্ছিক — কার্ডের নামের পাশে ছোট করে দেখাবে)</label>
+      <input type="file" id="svImageFile" accept="image/*" onchange="svPickImage()">
+      <div id="svImagePreview" style="margin-top:8px;display:flex;align-items:center;gap:10px;"></div>
+    </div>
+    <div class="field"><label>অর্ডার লিংক (ঐচ্ছিক — দিলে "অর্ডার করুন" চাপলে অর্ডার ফর্মের বদলে এই লিংক খুলবে)</label><input id="svLink" value="${esc(s.link||"")}" placeholder="যেমন: https://example.com"></div>`:""}
+    <button class="btn btn-primary btn-wide" onclick='saveService("${kind}","${id||""}")'>সংরক্ষণ করুন</button>
   `);
+  if(isSpecial) svRefreshImagePreview();
 }
-window.saveService=async function(id){
+window.saveService=async function(kind,id){
   const title=$("svTitle").value.trim(), price=$("svPrice").value.trim(), desc=$("svDesc").value.trim();
   const discountPrice=$("svDiscountPrice").value.trim();
   const discount=$("svDiscount").value.trim();
   if(!title||!price) return toast("নাম ও মূল্য দিন");
   try{
-    const key=id||push(ref(db,"dorkhast/site/services")).key;
-    const sort=id?(D.site.services[id].sort||0):(Date.now());
-    await set(ref(db,"dorkhast/site/services/"+key), {title, price, discountPrice, discount, desc, sort});
-    closeModal(); toast("সেবা সংরক্ষণ হয়েছে ✓");
+    const key=id||push(ref(db,"dorkhast/site/"+kind)).key;
+    const sort=id?(D.site[kind][id].sort||0):(Date.now());
+    const data={title, price, discountPrice, discount, desc, sort};
+    if(kind==="specialCards"){ data.image=svcModalImage||""; data.link=($("svLink")?.value||"").trim(); }
+    await set(ref(db,"dorkhast/site/"+kind+"/"+key), data);
+    closeModal(); toast(SVC_KINDS[kind].saved);
   }catch(e){ toast("সংরক্ষণ ব্যর্থ: "+e.message); }
 };
 
