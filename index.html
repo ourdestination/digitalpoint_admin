@@ -746,6 +746,96 @@ function detectNewChatMessages(){
   }
 }
 
+/* ---- একটি SMS-এর সাথে মেলে এমন unverified অর্ডারগুলো (অটো-ভেরিফাই ও রিকোয়েস্ট-চেক দুই জায়গাতেই ব্যবহৃত) ---- */
+function candidatesForSms(msg){
+  const amount=Number(msg.amount||0);
+  const method=String(msg.method||"").trim().toLowerCase();
+  const last2=String(msg.senderLast2||"").trim();
+  const txnId=String(msg.transactionId||"").trim();
+  if(!amount || !method || !last2) return [];
+  return Object.values(D.orders||{}).filter(o=>{
+    const p=o.paymentInfo;
+    if(!p || p.verified) return false;
+    if(String(p.method||"").trim().toLowerCase()!==method) return false;
+    if(Number(p.amount||0)!==amount) return false;
+    const pLast2=String(p.lastTwo||p.last2||p.lastFour||"").trim();
+    if(pLast2!==last2) return false;
+    // দুই পাশেই transactionId থাকলে সেটাও হুবহু মিলতে হবে
+    const pTxn=String(p.transactionId||"").trim();
+    if(txnId && pTxn && txnId!==pTxn) return false;
+    return true;
+  });
+}
+/* এই অর্ডারের জন্য এখনই অটো-ভেরিফাই হবে কিনা (unprocessed SMS-এর সাথে ঠিক ১টি অর্ডার মেলে) */
+function willAutoVerify(o){
+  const inbox=D.deviceInbox||{};
+  for(const msgs of Object.values(inbox)){
+    for(const msg of Object.values(msgs||{})){
+      if(!msg || msg.processed) continue;
+      const c=candidatesForSms(msg);
+      if(c.length===1 && c[0].orderId===o.orderId) return true;
+    }
+  }
+  return false;
+}
+/* এই পেমেন্ট (একই মাধ্যম + একই Transaction ID) আগে অন্য কোথাও ভেরিফাইড/ব্যবহৃত হয়ে গেছে কিনা */
+function findDuplicatePayment(o){
+  const p=o.paymentInfo||{};
+  const txn=String(p.transactionId||"").trim().toLowerCase();
+  if(!txn) return null; // Transaction ID ছাড়া ডুপলিকেট নিশ্চিত করা নিরাপদ না
+  const method=String(p.method||"").trim().toLowerCase();
+  for(const x of Object.values(D.orders||{})){
+    if(x.orderId===o.orderId) continue;
+    const xp=x.paymentInfo;
+    if(xp && xp.verified && String(xp.method||"").trim().toLowerCase()===method && String(xp.transactionId||"").trim().toLowerCase()===txn) return {orderId:x.orderId};
+  }
+  for(const msgs of Object.values(D.deviceInbox||{})){
+    for(const msg of Object.values(msgs||{})){
+      if(!msg || !msg.processed || !msg.matchedOrderId || msg.matchedOrderId===o.orderId) continue;
+      if(String(msg.method||"").trim().toLowerCase()===method && String(msg.transactionId||"").trim().toLowerCase()===txn) return {orderId:msg.matchedOrderId};
+    }
+  }
+  return null;
+}
+const VERIFY_MSG={
+  not_found:"পেমেন্ট ডেটা পাওয়া যায়নি। এডমিনের বার্তার জন্য অপেক্ষা করুন।",
+  duplicate:"ডুপলিকেট পেমেন্ট ডেটা। নতুন পেমেন্ট করুন ও পেমেন্ট ভেরিফাই রিকোয়েস্ট দিন।"
+};
+/* কাস্টমারের নতুন ভেরিফাই রিকোয়েস্ট চেক: অটো-ভেরিফাই হবে না এমন হলে ফলাফল (not_found / duplicate)
+   অর্ডারের paymentInfo-তে লিখে রাখা হয়, যাতে কাস্টমার সাইট সেটা দেখাতে পারে */
+const _evalInFlight=new Set();
+async function evaluatePaymentRequests(){
+  for(const o of Object.values(D.orders||{})){
+    const p=o.paymentInfo;
+    if(!p || p.verified) continue;
+    if(!(p.requestId || p.verificationPending)) continue;
+    const evalKey=`${p.requestId||""}|${p.submittedAt||""}|${p.method||""}|${p.transactionId||""}|${p.amount||""}`;
+    if(p.verifyEvalKey===evalKey) continue;      // এই রিকোয়েস্ট আগেই চেক হয়েছে
+    if(_evalInFlight.has(o.orderId)) continue;
+    if(willAutoVerify(o)) continue;               // অটো-ভেরিফাই হয়ে যাবে — আলাদা বার্তা লাগবে না
+    _evalInFlight.add(o.orderId);
+    try{
+      const result=findDuplicatePayment(o)?"duplicate":"not_found";
+      const now=Date.now();
+      const patch={verifyResult:result, verifyMessage:VERIFY_MSG[result], verifyEvalKey:evalKey, verifyCheckedAt:now};
+      const updates={};
+      Object.entries(patch).forEach(([k,v])=>{
+        updates[`dorkhast/orders/${o.orderId}/paymentInfo/${k}`]=v;
+        updates[`dorkhast/ordersByPhone/${o.phone}/${o.orderId}/paymentInfo/${k}`]=v;
+      });
+      if(p.requestId){
+        updates[`dorkhast/paymentVerificationRequests/${p.requestId}/checkResult`]=result;
+        updates[`dorkhast/paymentVerificationRequests/${p.requestId}/checkedAt`]=now;
+      }
+      await update(ref(db),updates);
+    }catch(e){
+      console.error("evaluatePaymentRequests error:", e);
+    }finally{
+      _evalInFlight.delete(o.orderId);
+    }
+  }
+}
+
 /* ---- সব unprocessed SMS-এর জন্য অটো-ভেরিফাই আবার চালানো হয় —
        অর্ডার তালিকা বা deviceInbox যেকোনোটা আপডেট হলেই এটা কল হবে,
        যাতে "SMS আগে এসেছে, অর্ডার পরে জমা হয়েছে" — এই কেসেও মিলে যায় ---- */
@@ -757,6 +847,7 @@ function runAutoVerifyScan(){
       autoVerifyFromSms(deviceId, msgKey, msg);
     });
   });
+  evaluatePaymentRequests();
 }
 
 /* ---- payment auto-verify: matches SMS-forwarder entries under dorkhast/deviceInbox
@@ -771,18 +862,7 @@ window.autoVerifyFromSms=async function(deviceId, msgKey, msg){
     // না থাকলে নিরাপদে মেলানো সম্ভব না — processed মার্ক না করে ছেড়ে দিচ্ছি (ম্যানুয়ালি দেখার জন্য)
     if(!amount || !method || !last2) return;
 
-    const candidates=Object.values(D.orders||{}).filter(o=>{
-      const p=o.paymentInfo;
-      if(!p || p.verified) return false;
-      if(String(p.method||"").trim().toLowerCase()!==method) return false;
-      if(Number(p.amount||0)!==amount) return false;
-      const pLast2=String(p.lastTwo||p.last2||p.lastFour||"").trim();
-      if(pLast2!==last2) return false;
-      // দুই পাশেই transactionId থাকলে সেটাও হুবহু মিলতে হবে
-      const pTxn=String(p.transactionId||"").trim();
-      if(txnId && pTxn && txnId!==pTxn) return false;
-      return true;
-    });
+    const candidates=candidatesForSms(msg);
 
     // একটার বেশি বা কোনো মিল না পেলে অটো-ভেরিফাই করা নিরাপদ না — ম্যানুয়ালি ভেরিফাই করতে হবে
     if(candidates.length!==1) return;
@@ -794,7 +874,8 @@ window.autoVerifyFromSms=async function(deviceId, msgKey, msg){
       verified:true, verifiedAt:now, verificationMode:'auto',
       verifiedBy:'auto (SMS মিল)',
       verificationNote:`SMS থেকে স্বয়ংক্রিয়ভাবে মিলিয়ে ভেরিফাই করা হয়েছে (Txn: ${txnId||'—'}, শেষ ২: ${last2})।`,
-      verificationPending:false
+      verificationPending:false,
+      verifyResult:null, verifyMessage:null
     };
     Object.entries(verifiedPatch).forEach(([k,v])=>{
       updates[`dorkhast/orders/${o.orderId}/paymentInfo/${k}`]=v;
@@ -1183,7 +1264,7 @@ window.confirmManualVerify=async function(orderId){
   const key=push(ref(db,`dorkhast/orders/${orderId}/trackingHistory`)).key;
   const verifiedBy=(auth.currentUser&&auth.currentUser.email)||'admin';
   const updates={};
-  const verifiedPatch={verified:true,verifiedAt:now,verificationMode:'manual',verifiedBy,verificationNote:note,verificationPending:false};
+  const verifiedPatch={verified:true,verifiedAt:now,verificationMode:'manual',verifiedBy,verificationNote:note,verificationPending:false,verifyResult:null,verifyMessage:null};
   Object.entries(verifiedPatch).forEach(([k,v])=>{
     updates[`dorkhast/orders/${orderId}/paymentInfo/${k}`]=v;
     updates[`dorkhast/ordersByPhone/${o.phone}/${orderId}/paymentInfo/${k}`]=v;
@@ -1212,6 +1293,8 @@ function paymentVerificationStatus(o){
   const p=o.paymentInfo;
   if(!p) return {text:'পেমেন্ট তথ্য নেই', cls:'soft'};
   if(p.verified) return {text:p.verificationMode==='manual'?'✓ Manual Verified':'✓ Auto Verified', cls:'ok'};
+  if(p.verifyResult==='duplicate') return {text:'⛔ ডুপলিকেট পেমেন্ট', cls:'warn'};
+  if(p.verifyResult==='not_found') return {text:'🔍 SMS মেলেনি — অপেক্ষমাণ', cls:'warn'};
   return {text:p.verificationPending?'⏳ যাচাই অপেক্ষমাণ':'⚠ যাচাই বাকি', cls:'warn'};
 }
 function paymentsView(){
