@@ -8,6 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Tiro+Bangla:ital@0;1&family=Hind+Siliguri:wght@400;500;600;700&family=Noto+Sans+Bengali:wght@500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
   :root{
@@ -1551,6 +1552,128 @@ function memoLabel(l){ const t=(l||"").trim(); if(!t) return "Item"; return MEMO
 function memoMoney(x){ return "Tk "+(Math.round((Number(x)||0)*100)/100).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function memoDate(x){ return x?new Date(x).toLocaleString("en-GB",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",hour12:true}):"—"; }
 const GOVT_ITEM_LABEL="Govt. Payment";
+/* ---- QR code carries the memo data itself as plain text (no link, no internet needed to read it) ---- */
+/* ---- Save-as-JPG: memo is drawn directly on a canvas (no html2canvas), so the QR always appears ---- */
+function loadImg(src){ return new Promise(res=>{ const i=new Image(); i.crossOrigin="anonymous"; i.onload=()=>res(i); i.onerror=()=>res(null); i.src=src; }); }
+function wrapLines(ctx,text,maxW){
+  const out=[];
+  String(text).split("\n").forEach(par=>{
+    let cur="";
+    par.split(" ").forEach(word=>{
+      const t=cur?cur+" "+word:word;
+      if(ctx.measureText(t).width<=maxW){ cur=t; return; }
+      if(cur){ out.push(cur); cur=""; }
+      let w=word;
+      while(ctx.measureText(w).width>maxW && w.length>1){
+        let k=w.length; while(k>1 && ctx.measureText(w.slice(0,k)).width>maxW) k--;
+        out.push(w.slice(0,k)); w=w.slice(k);
+      }
+      cur=w;
+    });
+    out.push(cur);
+  });
+  return out.length?out:[""];
+}
+async function memoToJPGCanvas(o,idLabel,logoUrl){
+  const m=o.memo, S=2, W=390, P=18, IW=W-2*P;
+  const F='"DejaVu Sans Mono","Menlo","SF Mono","Consolas","Liberation Mono","Courier New",monospace';
+  const logo=logoUrl?await loadImg(logoUrl):null;
+  const tmp=document.createElement("div");
+  new QRCode(tmp,{text:memoQRText(o),width:300,height:300,colorDark:"#1a1a1a",colorLight:"#ffffff",correctLevel:QRCode.CorrectLevel.L});
+  const qrCv=tmp.querySelector("canvas");
+  function run(ctx,draw){
+    let y=20;
+    const font=(sz,b)=>{ ctx.font=(b?"bold ":"")+sz+"px "+F; };
+    const center=(t,sz,col,b)=>{ font(sz,b); if(draw){ ctx.fillStyle=col; ctx.textAlign="center"; ctx.fillText(t,W/2,y+sz); } y+=sz+5; };
+    const line=dashed=>{ y+=10; if(draw){ ctx.strokeStyle=dashed?"#999":"#1a1a1a"; ctx.lineWidth=1; ctx.setLineDash(dashed?[3,3]:[]); ctx.beginPath(); ctx.moveTo(P,y+.5); ctx.lineTo(W-P,y+.5); ctx.stroke(); ctx.setLineDash([]); } y+=10; };
+    const row=(l,v,x)=>{
+      x=x||{}; const sz=x.size||12.5, lh=sz+6;
+      font(sz,true); const vw=ctx.measureText(v).width;
+      font(sz,false); const lines=wrapLines(ctx,l,IW-vw-10);
+      if(draw){
+        ctx.textAlign="left"; ctx.fillStyle=x.lcol||"#555"; font(sz,false);
+        lines.forEach((t,i)=>ctx.fillText(t,P,y+sz+3+i*lh));
+        font(sz,true); ctx.textAlign="right"; ctx.fillStyle=x.vcol||"#1a1a1a"; ctx.fillText(v,W-P,y+sz+3);
+      }
+      y+=lines.length*lh;
+    };
+    const para=(t,sz,col)=>{
+      font(sz,false); const lines=wrapLines(ctx,t,IW), lh=sz+6;
+      if(draw){ ctx.textAlign="left"; ctx.fillStyle=col; lines.forEach((s,i)=>ctx.fillText(s,P,y+sz+3+i*lh)); }
+      y+=lines.length*lh;
+    };
+    if(logo){
+      if(draw){ const lx=(W-34)/2; ctx.save(); ctx.beginPath(); ctx.roundRect?ctx.roundRect(lx,y,34,34,6):ctx.rect(lx,y,34,34); ctx.clip(); ctx.drawImage(logo,lx,y,34,34); ctx.restore(); }
+      y+=40;
+    }
+    center("Digital Point",19,"#1a1a1a",true);
+    center("CASH MEMO / BILL",12,"#555");
+    line(false);
+    row("Order No",idLabel(o));
+    row("Date",memoDate(m.generatedAt));
+    line(true);
+    row("Name",String(o.name||""));
+    if(o.customerId) row("Customer ID",String(o.customerId));
+    row("Mobile",String(o.phone||""));
+    line(true);
+    (m.items||[]).forEach(it=>row(memoLabel(it.label),memoMoney(it.amount)));
+    line(true);
+    row("Subtotal",memoMoney(m.subtotal));
+    if(m.discount) row("Discount","-"+memoMoney(m.discount));
+    if(m.promo&&m.promo.discountAmount) row("Promo Discount ("+m.promo.code+")","-"+memoMoney(m.promo.discountAmount));
+    y+=4; row("TOTAL DUE",memoMoney(m.total),{size:15,lcol:"#1a1a1a",vcol:"#4a2fa0"}); y+=4;
+    line(true);
+    para(MEMO_PAY_LINE,12.5,"#555");
+    if(m.note){ line(true); para(memoEnDigits(m.note),12.5,"#555"); }
+    line(false);
+    y+=6;
+    if(draw && qrCv){ const qx=(W-150)/2; ctx.fillStyle="#fff"; ctx.fillRect(qx-6,y,162,162); ctx.drawImage(qrCv,qx,y+6,150,150); }
+    y+=168;
+    center("Scan to read memo details",10.5,"#555");
+    y+=4;
+    center("Thank you \u2014 Digital Point",12,"#555");
+    center("Management by Hredoy Roy",10.5,"#888");
+    return y+12;
+  }
+  const H=Math.ceil(run(document.createElement("canvas").getContext("2d"),false));
+  const cv=document.createElement("canvas"); cv.width=W*S; cv.height=H*S;
+  const ctx=cv.getContext("2d"); ctx.scale(S,S); ctx.textBaseline="alphabetic";
+  ctx.fillStyle="#ffffff"; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle="#bbb"; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+  ctx.beginPath(); ctx.moveTo(.5,0); ctx.lineTo(.5,H); ctx.moveTo(W-.5,0); ctx.lineTo(W-.5,H); ctx.stroke(); ctx.setLineDash([]);
+  run(ctx,true);
+  return cv;
+}
+function memoQRText(o){
+  const m=o.memo, L=[];
+  L.push("DIGITAL POINT - CASH MEMO");
+  L.push("Order No: "+memoIdLabel(o));
+  L.push("Date: "+memoDate(m.generatedAt));
+  L.push("Name: "+o.name);
+  if(o.customerId) L.push("Customer ID: "+o.customerId);
+  L.push("Mobile: "+o.phone);
+  L.push("--------------");
+  (m.items||[]).forEach(it=>L.push(memoLabel(it.label)+": "+memoMoney(it.amount)));
+  L.push("--------------");
+  L.push("Subtotal: "+memoMoney(m.subtotal));
+  if(m.discount) L.push("Discount: -"+memoMoney(m.discount));
+  if(m.promo&&m.promo.discountAmount) L.push("Promo ("+m.promo.code+"): -"+memoMoney(m.promo.discountAmount));
+  L.push("TOTAL: "+memoMoney(m.total));
+  if(m.note) L.push("Note: "+memoEnDigits(m.note));
+  return L.join("\n");
+}
+function drawMemoQR(o){
+  const el=document.getElementById("memoQR"); if(!el||typeof QRCode==="undefined") return;
+  el.innerHTML="";
+  try{
+    /* draw at 300px, then swap the library's canvas/img for one plain <img> so html2canvas (Save as JPG) captures it reliably */
+    new QRCode(el,{text:memoQRText(o),width:300,height:300,colorDark:"#1a1a1a",colorLight:"#ffffff",correctLevel:QRCode.CorrectLevel.L});
+    const cv=el.querySelector("canvas");
+    if(cv){ window.__memoQRUrl=cv.toDataURL("image/png"); el.innerHTML='<img alt="QR" src="'+cv.toDataURL("image/png")+'" width="150" height="150" style="display:block;width:150px;height:150px;">'; }
+  }
+  catch(e){ console.warn("QR failed",e); el.innerHTML='<div style="font-size:11px;color:#a11;line-height:1.3;">QR too large</div>'; }
+}
+
 let memoDraft=null; // {orderId, items:[{label,amount}], discount, note, promoHolderId}
 
 function isGovtItem(it){ return (it.label||"").trim().toLowerCase()===GOVT_ITEM_LABEL.toLowerCase(); }
@@ -1743,6 +1866,7 @@ window.showMemoView=function(orderId){
   if(!o) return;
   if(!o.memo) return openMemoEditor(orderId);
   const m=o.memo;
+  window.__memoViewOrderId=orderId;
   modal("ক্যাশ মেমো", `
     <div class="atm-memo" id="atmMemoPrint">
       <div class="atm-slot"></div>
@@ -1772,7 +1896,7 @@ window.showMemoView=function(orderId){
         <div class="atm-memo-row" style="display:block;"><span>${MEMO_PAY_LINE}</span></div>
         ${m.note?`<div class="atm-memo-divider dashed"></div><div class="atm-memo-row" style="display:block;"><span>${esc(memoEnDigits(m.note))}</span></div>`:""}
         <div class="atm-memo-divider"></div>
-        <div class="atm-memo-barcode"></div>
+        <div style="text-align:center;margin:12px 0 6px;"><div id="memoQR" style="display:inline-block;padding:6px;background:#fff;line-height:0;"></div><div style="font-size:10.5px;color:#555;margin-top:4px;">Scan to read memo details</div></div>
         <div class="atm-memo-thanks">Thank you — Digital Point</div>
         <div class="atm-memo-mgmt">Management by Hredoy Roy</div>
       </div>
@@ -1787,6 +1911,7 @@ window.showMemoView=function(orderId){
       <button class="btn btn-danger btn-wide" onclick='deleteMemo("${orderId}")'>মেমো মুছুন</button>
     </div>
   `);
+  drawMemoQR(o);
 };
 window.openMemo=function(orderId){
   const o=D.orders[orderId];
@@ -1801,25 +1926,17 @@ window.sendMemoWhatsApp=function(orderId){
   window.open(waLink(o.phone)+"?text="+encodeURIComponent(text), "_blank");
 };
 window.saveMemoAsImage=async function(){
-  const node=$("atmMemoPrint");
-  if(!node) return;
-  if(!window.html2canvas){
-    toast("ছবি তৈরির সিস্টেম লোড হয়নি, ইন্টারনেট সংযোগ পরীক্ষা করে আবার চেষ্টা করুন");
-    return;
-  }
+  const o=D.orders[window.__memoViewOrderId];
+  if(!o||!o.memo) return toast("মেমো পাওয়া যায়নি");
   try{
-    const canvas = await window.html2canvas(node, {backgroundColor:"#ffffff", scale:2, useCORS:true});
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+    if(typeof QRCode==="undefined") throw new Error("QR লাইব্রেরি লোড হয়নি, ইন্টারনেট সংযোগ দেখুন");
+    const cv=await memoToJPGCanvas(o,memoIdLabel,(D.site&&D.site.logo)||"");
     const a=document.createElement("a");
-    a.href=dataUrl;
-    a.download="memo-"+Date.now()+".jpg";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    a.href=cv.toDataURL("image/jpeg",0.95);
+    a.download="Memo-"+memoIdLabel(o)+".jpg";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
     toast("মেমো ছবি হিসেবে সেভ হয়েছে ✓");
-  }catch(err){
-    toast("ছবি তৈরি ব্যর্থ: "+err.message);
-  }
+  }catch(err){ console.error(err); toast("ছবি তৈরি ব্যর্থ: "+err.message); }
 };
 
 /* ---- services & pricing (merged) ----
@@ -2269,19 +2386,102 @@ window.deleteChatThread=async function(phone){
   }catch(e){ console.error(e); toast("মুছতে সমস্যা হয়েছে।"); }
 };
 
+/* ---- সব কাস্টমার একসাথে + সার্চ + ফিল্টার (মোবাইল নম্বর মিলিয়ে ডুপ্লিকেট বাদ) ---- */
+let custSearch="", custFilter="", custSort="new";
+function mergedCustomers(){
+  const merged={};
+  Object.entries(D.site?.customerRecords||{}).forEach(([secId,sec])=>{
+    Object.entries(sec.customers||{}).forEach(([cid,c])=>{
+      const key=normalizePhone(c.phone||"")||(secId+"-"+cid);
+      if(!merged[key]) merged[key]={...c, sectionIds:[secId], sectionNames:[sec.name||""]};
+      else{
+        const m=merged[key];
+        if(!m.sectionIds.includes(secId)){ m.sectionIds.push(secId); m.sectionNames.push(sec.name||""); }
+        if((c.at||0)>(m.at||0)) m.at=c.at;
+        if(!m.customerId&&c.customerId) m.customerId=c.customerId;
+      }
+    });
+  });
+  const cnt={};
+  Object.values(D.orders||{}).forEach(o=>{ const p=normalizePhone(o.phone||""); if(p) cnt[p]=(cnt[p]||0)+1; });
+  return Object.values(merged).map(c=>({...c, orderCount:cnt[normalizePhone(c.phone||"")]||0}));
+}
+function filteredCustomers(){
+  const q=memoEnDigits(custSearch).trim().toLowerCase();
+  const qd=q.replace(/\D/g,"");
+  let list=mergedCustomers().filter(c=>{
+    if(custFilter && !c.sectionIds.includes(custFilter)) return false;
+    if(!q) return true;
+    return String(c.name||"").toLowerCase().includes(q)
+      || String(c.customerId||"").toLowerCase().includes(q)
+      || (qd && String(c.phone||"").replace(/\D/g,"").includes(qd));
+  });
+  if(custSort==="old") list.sort((a,b)=>(a.at||0)-(b.at||0));
+  else if(custSort==="name") list.sort((a,b)=>String(a.name||"").localeCompare(String(b.name||"")));
+  else if(custSort==="orders") list.sort((a,b)=>b.orderCount-a.orderCount);
+  else list.sort((a,b)=>(b.at||0)-(a.at||0));
+  return list;
+}
+function custListHTML(list){
+  return list.length?list.map(c=>`<div class="list-item">
+    <div class="info">
+      <h4>${esc(c.name)}</h4>
+      <p>📞 ${esc(c.phone)}${c.customerId?` &nbsp;·&nbsp; 🆔 ${esc(c.customerId)}`:""}${c.orderCount?` &nbsp;·&nbsp; 🛒 ${c.orderCount}টি অর্ডার`:""}</p>
+      <p style="font-size:12px;color:var(--ink-soft);">${esc(c.sectionNames.filter(Boolean).join(", ")||"—")}</p>
+    </div>
+    <div class="list-actions">
+      <a class="wa-icon" href="${esc(waLink(c.phone))}" target="_blank" title="WhatsApp এ মেসেজ করুন">${WA_ICON_SVG}</a>
+    </div>
+  </div>`).join(""):`<div class="empty">কোনো কাস্টমার পাওয়া যায়নি।</div>`;
+}
+function refreshCustList(){
+  const list=filteredCustomers();
+  const box=$("custListBox"); if(box) box.innerHTML=custListHTML(list);
+  const n=$("custCount"); if(n) n.textContent="মোট "+list.length+" জন কাস্টমার";
+}
+window.onCustSearch=function(v){ custSearch=v; refreshCustList(); };
+window.onCustFilter=function(v){ custFilter=v; refreshCustList(); };
+window.onCustSort=function(v){ custSort=v; refreshCustList(); };
+window.clearCustFilters=function(){ custSearch=""; custFilter=""; custSort="new"; render("records"); };
+
 function recordsView(){
-  if(activeRecordSection==="__ALL__") return allCustomersView();
+  if(activeRecordSection==="__ALL__") activeRecordSection=null;
   if(activeRecordSection && !D.site?.customerRecords?.[activeRecordSection]) activeRecordSection=null;
   if(activeRecordSection) return recordDetailView(activeRecordSection);
   const sections=Object.entries(D.site?.customerRecords||{}).sort((a,b)=>(a[1].at||0)-(b[1].at||0));
+  if(custFilter && !D.site?.customerRecords?.[custFilter]) custFilter="";
+  const list=filteredCustomers();
   return `
   <div class="section-head"><h2>কাস্টমার রেকর্ড</h2>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <button class="btn btn-soft btn-sm" onclick="openAllCustomers()">👥 সকল কাস্টমার একসাথে দেখুন</button>
-      <button class="btn btn-primary btn-sm" onclick="addRecordSection()">＋ নতুন সেকশন (ম্যানুয়াল)</button>
-    </div>
+    <button class="btn btn-primary btn-sm" onclick="addRecordSection()">＋ নতুন সেকশন (ম্যানুয়াল)</button>
   </div>
-  <p style="font-size:13px;color:var(--ink-soft);margin:-8px 0 16px;">কাস্টমার যখন ওয়েবসাইটে অর্ডার করেন, তখন সেবার ধরণ অনুযায়ী সেকশনে তার নাম ও মোবাইল নম্বর স্বয়ংক্রিয়ভাবে রেকর্ড হয়ে যায় — অর্ডার সেকশন থেকে পরে অর্ডারটি মুছে ফেললেও এই রেকর্ড থেকে যায়। প্রয়োজনে এখান থেকে ম্যানুয়ালি নতুন সেকশন বা কাস্টমার যোগ করা যাবে, এবং যেকোনো রেকর্ড এডমিন চাইলে মুছেও ফেলতে পারবে। প্রতিটি সেকশন থেকে একসাথে সব কাস্টমারকে WhatsApp-এ মেসেজ পাঠানো যাবে।</p>
+  <div class="card" style="margin-bottom:16px;">
+    <div class="field" style="margin-bottom:10px;">
+      <input id="custSearchInput" type="search" placeholder="🔍 নাম, মোবাইল নম্বর বা Customer ID দিয়ে খুঁজুন" value="${esc(custSearch)}" oninput="onCustSearch(this.value)">
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <div class="field" style="margin:0;flex:1 1 170px;">
+        <select onchange="onCustFilter(this.value)">
+          <option value="">সব সেবা / সেকশন</option>
+          ${sections.map(([id,sec])=>`<option value="${esc(id)}" ${custFilter===id?"selected":""}>${esc(sec.name)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field" style="margin:0;flex:1 1 150px;">
+        <select onchange="onCustSort(this.value)">
+          <option value="new" ${custSort==="new"?"selected":""}>নতুন আগে</option>
+          <option value="old" ${custSort==="old"?"selected":""}>পুরোনো আগে</option>
+          <option value="name" ${custSort==="name"?"selected":""}>নাম (A–Z)</option>
+          <option value="orders" ${custSort==="orders"?"selected":""}>বেশি অর্ডার আগে</option>
+        </select>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="clearCustFilters()">রিসেট</button>
+    </div>
+    <p id="custCount" style="font-size:12.5px;color:var(--ink-soft);margin-top:10px;">মোট ${list.length} জন কাস্টমার</p>
+  </div>
+  <div class="card" id="custListBox">${custListHTML(list)}</div>
+
+  <div class="section-head" style="margin-top:28px;"><h2 style="font-size:17px;">সেবা সেকশন</h2></div>
+  <p style="font-size:13px;color:var(--ink-soft);margin:-8px 0 12px;">কোনো সেকশন ওপেন করলে শুধু সেই সেবার কাস্টমার দেখা যাবে ও বাল্ক WhatsApp মেসেজ পাঠানো যাবে।</p>
   <div class="card">
     ${sections.length?sections.map(([id,sec])=>{
       const count=Object.keys(sec.customers||{}).length;
