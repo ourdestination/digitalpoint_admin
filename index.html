@@ -479,7 +479,7 @@ window.handleTrackLinkClick=function(orderId, phone){
   sendTrackingLink(orderId, phone);
 };
 
-let D={orders:{}, site:{}, stats:{}, liveCount:0, chats:{}, complaints:{}, promoHolders:{}, deviceInbox:{}}, offs=[], activeTab="dashboard", siteLoaded=false, seededDefaults=false;
+let D={orders:{}, site:{}, stats:{}, liveCount:0, chats:{}, complaints:{}, promoHolders:{}, deviceInbox:{}, specialAccess:{}}, offs=[], activeTab="dashboard", siteLoaded=false, seededDefaults=false;
 let activePromoHolderId=null;
 let activeChatPhone=null, __chatConvUnsub=null;
 let notifications=[], knownOrderIds=null, knownPaymentRequestIds=null, knownChatStamps=null, knownComplaintIds=null;
@@ -649,6 +649,7 @@ function listenAll(){
   }));
   offs.push(onValue(ref(db,"dorkhast/site"), s=>{ D.site=s.val()||{}; siteLoaded=true; applyLogo(D.site.logo||""); cleanupExpiredNotices(); render(activeTab); }));
   offs.push(onValue(ref(db,"dorkhast/promoHolders"), s=>{ D.promoHolders=s.val()||{}; render(activeTab); }));
+  offs.push(onValue(ref(db,"dorkhast/specialAccess"), s=>{ D.specialAccess=s.val()||{}; if(activeTab==="records"||activeTab==="specialServices") render(activeTab); }, e=>console.error("specialAccess:",e)));
   offs.push(onValue(ref(db,"dorkhast/stats"), s=>{ D.stats=s.val()||{}; render(activeTab); }));
   offs.push(onValue(ref(db,"dorkhast/presence"), s=>{ const v=s.val(); D.liveCount=v?Object.keys(v).length:0; render(activeTab); }));
   offs.push(onValue(ref(db,"dorkhast/chats"), s=>{
@@ -1991,7 +1992,7 @@ function svcItems(kind){
   return Object.entries(D.site?.[kind]||{}).sort((a,b)=>(a[1].sort||0)-(b[1].sort||0));
 }
 function servicesView(){ ensureDefaultServices(); return svcView("services"); }
-function specialServicesView(){ return svcView("specialCards"); }
+function specialServicesView(){ return svcView("specialCards")+specialAccessCard(); }
 function svcView(kind){
   const L=SVC_KINDS[kind];
   const items=svcItems(kind);
@@ -2406,11 +2407,54 @@ function mergedCustomers(){
   Object.values(D.orders||{}).forEach(o=>{ const p=normalizePhone(o.phone||""); if(p) cnt[p]=(cnt[p]||0)+1; });
   return Object.values(merged).map(c=>({...c, orderCount:cnt[normalizePhone(c.phone||"")]||0}));
 }
+/* ---- স্পেশাল সেবার অনুমতি: dorkhast/specialAccess/{মোবাইল নম্বর} = {name, customerId, at}
+       এই তালিকায় থাকা কাস্টমারই লগইন করে স্পেশাল সেবা দেখতে ও অর্ডার করতে পারেন ---- */
+function hasSpecial(phone){ return !!(D.specialAccess||{})[normalizePhone(phone||"")]; }
+function specialBadge(c){
+  return hasSpecial(c.phone) ? ` &nbsp;·&nbsp; <span style="color:var(--gold);font-weight:600;">⭐ স্পেশাল সেবা অনুমোদিত</span>` : "";
+}
+function specialBtnHTML(c){
+  const on=hasSpecial(c.phone);
+  return `<button class="btn ${on?"btn-danger":"btn-soft"} btn-sm" data-phone="${esc(c.phone||"")}" data-name="${esc(c.name||"")}" data-cid="${esc(c.customerId||"")}" onclick="toggleSpecialAccess(this)">${on?"⭐ অনুমতি বাতিল":"☆ স্পেশাল সেবার অনুমতি দিন"}</button>`;
+}
+window.toggleSpecialAccess=async function(btn){
+  const phone=normalizePhone(btn.dataset.phone||"");
+  if(!/^0\d{9,10}$/.test(phone)) return toast("এই কাস্টমারের সঠিক মোবাইল নম্বর নেই");
+  const name=btn.dataset.name||"";
+  const customerId=btn.dataset.cid||D.site?.customerIndexByPhone?.[phone]||"";
+  try{
+    if(hasSpecial(phone)){
+      if(!confirm((name||phone)+"-এর স্পেশাল সেবার অনুমতি বাতিল করবেন? তিনি আর স্পেশাল সেবা দেখতে বা অর্ডার করতে পারবেন না।")) return;
+      await remove(ref(db,"dorkhast/specialAccess/"+phone));
+      delete D.specialAccess[phone];
+      toast("অনুমতি বাতিল করা হয়েছে");
+    }else{
+      await set(ref(db,"dorkhast/specialAccess/"+phone),{name,customerId,at:Date.now()});
+      D.specialAccess[phone]={name,customerId,at:Date.now()};
+      toast((name||phone)+" এখন এই নম্বর দিয়ে লগইন করে স্পেশাল সেবা দেখতে ও নিতে পারবেন ✓");
+    }
+    render(activeTab);
+  }catch(e){ toast("ব্যর্থ: "+e.message); }
+};
+function specialAccessCard(){
+  const entries=Object.entries(D.specialAccess||{}).sort((a,b)=>(b[1].at||0)-(a[1].at||0));
+  return `
+  <div class="section-head" style="margin-top:28px;"><h2 style="font-size:17px;">অনুমোদিত কাস্টমার (${entries.length} জন)</h2>
+    <button class="btn btn-soft btn-sm" onclick="document.querySelector('.side button[data-tab=records]').click()">কাস্টমার রেকর্ড থেকে অনুমতি দিন</button></div>
+  <p style="font-size:13px;color:var(--ink-soft);margin:-8px 0 12px;">শুধু এই তালিকার কাস্টমাররাই লগইন করে স্পেশাল সেবার তালিকা দেখতে ও অর্ডার করতে পারবেন। অন্য কাস্টমাররা এই অংশ দেখতেই পাবেন না।</p>
+  <div class="card">
+    ${entries.length?entries.map(([ph,a])=>`<div class="list-item">
+      <div class="info"><h4>${esc(a.name||"")}</h4><p>📞 ${esc(ph)}${a.customerId?` &nbsp;·&nbsp; 🆔 ${esc(a.customerId)}`:""}</p></div>
+      <div class="list-actions">${specialBtnHTML({phone:ph,name:a.name,customerId:a.customerId})}</div>
+    </div>`).join(""):`<div class="empty">এখনও কাউকে স্পেশাল সেবার অনুমতি দেওয়া হয়নি।</div>`}
+  </div>`;
+}
 function filteredCustomers(){
   const q=memoEnDigits(custSearch).trim().toLowerCase();
   const qd=q.replace(/\D/g,"");
   let list=mergedCustomers().filter(c=>{
-    if(custFilter && !c.sectionIds.includes(custFilter)) return false;
+    if(custFilter==="__special__"){ if(!hasSpecial(c.phone)) return false; }
+    else if(custFilter && !c.sectionIds.includes(custFilter)) return false;
     if(!q) return true;
     return String(c.name||"").toLowerCase().includes(q)
       || String(c.customerId||"").toLowerCase().includes(q)
@@ -2426,10 +2470,11 @@ function custListHTML(list){
   return list.length?list.map(c=>`<div class="list-item">
     <div class="info">
       <h4>${esc(c.name)}</h4>
-      <p>📞 ${esc(c.phone)}${c.customerId?` &nbsp;·&nbsp; 🆔 ${esc(c.customerId)}`:""}${c.orderCount?` &nbsp;·&nbsp; 🛒 ${c.orderCount}টি অর্ডার`:""}</p>
+      <p>📞 ${esc(c.phone)}${c.customerId?` &nbsp;·&nbsp; 🆔 ${esc(c.customerId)}`:""}${c.orderCount?` &nbsp;·&nbsp; 🛒 ${c.orderCount}টি অর্ডার`:""}${specialBadge(c)}</p>
       <p style="font-size:12px;color:var(--ink-soft);">${esc(c.sectionNames.filter(Boolean).join(", ")||"—")}</p>
     </div>
     <div class="list-actions">
+      ${specialBtnHTML(c)}
       <a class="wa-icon" href="${esc(waLink(c.phone))}" target="_blank" title="WhatsApp এ মেসেজ করুন">${WA_ICON_SVG}</a>
     </div>
   </div>`).join(""):`<div class="empty">কোনো কাস্টমার পাওয়া যায়নি।</div>`;
@@ -2449,7 +2494,7 @@ function recordsView(){
   if(activeRecordSection && !D.site?.customerRecords?.[activeRecordSection]) activeRecordSection=null;
   if(activeRecordSection) return recordDetailView(activeRecordSection);
   const sections=Object.entries(D.site?.customerRecords||{}).sort((a,b)=>(a[1].at||0)-(b[1].at||0));
-  if(custFilter && !D.site?.customerRecords?.[custFilter]) custFilter="";
+  if(custFilter && custFilter!=="__special__" && !D.site?.customerRecords?.[custFilter]) custFilter="";
   const list=filteredCustomers();
   return `
   <div class="section-head"><h2>কাস্টমার রেকর্ড</h2>
@@ -2463,6 +2508,7 @@ function recordsView(){
       <div class="field" style="margin:0;flex:1 1 170px;">
         <select onchange="onCustFilter(this.value)">
           <option value="">সব সেবা / সেকশন</option>
+          <option value="__special__" ${custFilter==="__special__"?"selected":""}>⭐ স্পেশাল সেবার অনুমোদিত কাস্টমার</option>
           ${sections.map(([id,sec])=>`<option value="${esc(id)}" ${custFilter===id?"selected":""}>${esc(sec.name)}</option>`).join("")}
         </select>
       </div>
@@ -2574,8 +2620,9 @@ function recordDetailView(id){
   </div>
   <div class="card">
     ${customers.length?customers.map(([cid,c])=>`<div class="list-item">
-      <div class="info"><h4>${esc(c.name)}</h4><p>📞 ${esc(c.phone)}${c.customerId?` &nbsp;·&nbsp; 🆔 ${esc(c.customerId)}`:""}</p></div>
+      <div class="info"><h4>${esc(c.name)}</h4><p>📞 ${esc(c.phone)}${c.customerId?` &nbsp;·&nbsp; 🆔 ${esc(c.customerId)}`:""}${specialBadge(c)}</p></div>
       <div class="list-actions">
+        ${specialBtnHTML(c)}
         <a class="wa-icon" href="${esc(waLink(c.phone))}" target="_blank" title="WhatsApp এ মেসেজ করুন">${WA_ICON_SVG}</a>
         <button class="btn btn-danger btn-sm" onclick='deleteRecordCustomer("${id}","${cid}")'>মুছুন</button>
       </div>
