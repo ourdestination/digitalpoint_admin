@@ -641,13 +641,14 @@ function listenAll(){
       knownOrderIds=new Set(newIds);
     }
     D.orders=newOrders;
+    cleanupDeliveredOrders();
     render(activeTab);
     // নতুন অর্ডার / আপডেট হওয়া অর্ডারের পেমেন্ট তথ্যের সাথে আগে থেকে জমে থাকা,
     // এখনো না-মেলা SMS গুলো আবার মিলিয়ে দেখার চেষ্টা করি (আগে এটা শুধু deviceInbox
     // পরিবর্তন হলেই চলত, তাই SMS আগে এসে গেলে ও অর্ডার পরে জমা হলে অটো-ভেরিফাই আটকে থাকত)
     runAutoVerifyScan();
   }));
-  offs.push(onValue(ref(db,"dorkhast/site"), s=>{ D.site=s.val()||{}; siteLoaded=true; applyLogo(D.site.logo||""); cleanupExpiredNotices(); render(activeTab); }));
+  offs.push(onValue(ref(db,"dorkhast/site"), s=>{ D.site=s.val()||{}; siteLoaded=true; applyLogo(D.site.logo||""); cleanupExpiredNotices(); cleanupExpiredServices(); render(activeTab); }));
   offs.push(onValue(ref(db,"dorkhast/promoHolders"), s=>{ D.promoHolders=s.val()||{}; render(activeTab); }));
   offs.push(onValue(ref(db,"dorkhast/specialAccess"), s=>{ D.specialAccess=s.val()||{}; if(activeTab==="records"||activeTab==="specialServices") render(activeTab); }, e=>console.error("specialAccess:",e)));
   offs.push(onValue(ref(db,"dorkhast/stats"), s=>{ D.stats=s.val()||{}; render(activeTab); }));
@@ -1138,6 +1139,13 @@ window.updateOrder=async function(orderId){
     const entry={status, note, at:now};
     const updates={};
     updates[`dorkhast/orders/${orderId}/status`]=status;
+    if(status==="delivered" && o.status!=="delivered"){
+      updates[`dorkhast/orders/${orderId}/deliveredAt`]=now;
+      updates[`dorkhast/ordersByPhone/${o.phone}/${orderId}/deliveredAt`]=now;
+    }else if(status!=="delivered" && o.deliveredAt){
+      updates[`dorkhast/orders/${orderId}/deliveredAt`]=null;
+      updates[`dorkhast/ordersByPhone/${o.phone}/${orderId}/deliveredAt`]=null;
+    }
     updates[`dorkhast/orders/${orderId}/updatedAt`]=now;
     updates[`dorkhast/orders/${orderId}/trackingHistory/${key}`]=entry;
     updates[`dorkhast/ordersByPhone/${o.phone}/${orderId}/status`]=status;
@@ -1945,6 +1953,8 @@ window.saveMemoAsImage=async function(){
    (dorkhast/site/services): title, price (original — shown crossed out only when
    discountPrice is set), discountPrice (the highlighted current price, optional),
    discount (badge text like "20% OFF" — shown as a red ribbon on the site), and
+   category (optional, "services" only — the website first shows category cards and tapping one lists
+   that category's services; blank = grouped under "অন্যান্য"), and
    desc (a single free-text field — this is shown as the card's description AND is
    what auto-fills the order form's "প্রয়োজনীয় তথ্য" box, so put each requirement
    on its own line here). There's no per-card border-colour or highlight field —
@@ -1979,7 +1989,7 @@ async function ensureDefaultServices(){
 const SVC_KINDS={
   services:{
     head:"সেবা ও মূল্য তালিকা", add:"＋ নতুন সেবা", modalNew:"নতুন সেবা", modalEdit:"সেবা সম্পাদনা", saved:"সেবা সংরক্ষণ হয়েছে ✓",
-    note:"ওয়েবসাইটে সেবাগুলো কার্ড আকারে দেখানো হয় (মূল দাম, ছাড়ের দাম, ছাড়ের ব্যাজ ও বিবরণ/প্রয়োজনীয় তথ্য সহ) — কার্ডের ⠿ হ্যান্ডেল ধরে টেনে (ড্র্যাগ করে) নতুন জায়গায় ছেড়ে দিন, অথবা ↑ ↓ বাটন দিয়ে ক্রম পরিবর্তন করুন।",
+    note:"ওয়েবসাইটে প্রথমে ক্যাটাগরি কার্ড দেখানো হয়; ক্যাটাগরিতে চাপলে সেই ক্যাটাগরির সেবাগুলো কার্ড আকারে দেখায় (মূল দাম, ছাড়ের দাম, ছাড়ের ব্যাজ ও বিবরণ/প্রয়োজনীয় তথ্য সহ) — কার্ডের ⠿ হ্যান্ডেল ধরে টেনে (ড্র্যাগ করে) নতুন জায়গায় ছেড়ে দিন, অথবা ↑ ↓ বাটন দিয়ে ক্রম পরিবর্তন করুন।",
     empty:"সেবা তালিকা লোড হচ্ছে..."
   },
   specialCards:{
@@ -1993,11 +2003,202 @@ function svcItems(kind){
 }
 function servicesView(){ ensureDefaultServices(); return svcView("services"); }
 function specialServicesView(){ return svcView("specialCards")+specialAccessCard(); }
-function svcView(kind){
-  const L=SVC_KINDS[kind];
-  const items=svcItems(kind);
+/* ---- সেবা ও মূল্য তালিকা: categories first ----
+   "services" opens on a grid of category cards; pressing one shows that category's services, where
+   "＋ নতুন সেবা" adds a service straight into it. Categories exist only through their services
+   (service.category), so a brand-new empty category is kept locally until its first service is saved. */
+let svcAdminCat=null, svcPendingCats=[], svcCatNames=[], svcPendingLogos={};
+/* category logo: stored as "categoryLogo" on every service of that category (no extra database path needed) */
+/* খালি ক্যাটাগরির লোগো dorkhast/site/categoryLogos-এ [{name, logo}] আকারে সংরক্ষিত থাকে */
+function svcLogoStore(){
+  const o=D.site?.categoryLogos;
+  return (Array.isArray(o)?o:Object.values(o||{})).filter(x=>x && x.name && x.logo).map(x=>({name:String(x.name),logo:String(x.logo)}));
+}
+function svcCatLogo(name){
+  const hit=svcItems("services").map(([id,s])=>s).find(s=>svcCatName(s)===name && String(s.categoryLogo||"").trim());
+  if(hit) return String(hit.categoryLogo).trim();
+  const st=svcLogoStore().find(x=>x.name===name);
+  return st?st.logo:(svcPendingLogos[name]||"");
+}
+async function svcWriteLogoStore(list){
+  await set(ref(db,"dorkhast/site/categoryLogos"), list.length?list:null);
+  if(D.site) D.site.categoryLogos=list;
+}
+function squareDataURL(file,size){
+  return new Promise((resolve,reject)=>{
+    const r=new FileReader();
+    r.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        /* no cropping: the whole picture is scaled to fit inside a square canvas (transparent padding on the short sides) */
+        const scale=Math.min(size/img.width,size/img.height), w=Math.max(1,Math.round(img.width*scale)), h=Math.max(1,Math.round(img.height*scale));
+        const c=document.createElement("canvas"); c.width=size; c.height=size;
+        const ctx=c.getContext("2d"); ctx.imageSmoothingQuality="high";
+        ctx.drawImage(img,0,0,img.width,img.height,Math.round((size-w)/2),Math.round((size-h)/2),w,h);
+        let out=c.toDataURL("image/webp",0.85);
+        if(!out.startsWith("data:image/webp")) out=c.toDataURL("image/png");
+        resolve(out);
+      };
+      img.onerror=()=>reject(new Error("ছবি পড়া যায়নি"));
+      img.src=e.target.result;
+    };
+    r.onerror=()=>reject(new Error("ফাইল পড়া যায়নি"));
+    r.readAsDataURL(file);
+  });
+}
+async function svSetCatLogo(url){
+  const name=svcAdminCat; if(name===null) return;
+  const updates={}; let n=0;
+  svcItems("services").forEach(([id,s])=>{ if(svcCatName(s)===name){ updates[`dorkhast/site/services/${id}/categoryLogo`]=url||null; n++; } });
+  try{
+    if(n) await update(ref(db),updates);
+    const rest=svcLogoStore().filter(x=>x.name!==name);
+    if(!n && url) await svcWriteLogoStore([...rest,{name,logo:url}]); /* সেবা নেই — লোগো আলাদাভাবে ডাটাবেসে রাখি */
+    else if(svcLogoStore().length!==rest.length) await svcWriteLogoStore(rest);
+    delete svcPendingLogos[name];
+    toast(url?"লোগো সংরক্ষণ হয়েছে ✓":"লোগো মুছে ফেলা হয়েছে");
+    render(activeTab);
+  }catch(e){ toast("লোগো সংরক্ষণ ব্যর্থ: "+e.message); }
+}
+window.svPickCatLogo=async function(){
+  const inp=$("svCatLogoFile"), f=inp&&inp.files&&inp.files[0];
+  if(!f) return;
+  if(!f.type.startsWith("image/")){ inp.value=""; return toast("শুধুমাত্র ছবি ফাইল দিন"); }
+  try{ await svSetCatLogo(await squareDataURL(f,256)); }catch(e){ toast(e.message); }
+  inp.value="";
+};
+window.svClearCatLogo=()=>{ if(confirm("ক্যাটাগরির লোগো মুছে ফেলবেন?")) svSetCatLogo(""); };
+const svcCatName=s=>String(s.category||"").trim()||"অন্যান্য";
+function svcCatOrderList(){
+  const o=D.site?.categoryOrder;
+  return (Array.isArray(o)?o:Object.values(o||{})).map(x=>String(x));
+}
+function svcCatGroups(){
+  const m=new Map();
+  svcItems("services").forEach(([id,s])=>{ const n=svcCatName(s); m.set(n,(m.get(n)||0)+1); });
+  svcPendingCats.forEach(n=>{ if(!m.has(n)) m.set(n,0); });
+  /* অ্যাডমিনের টেনে সাজানো ক্রম (dorkhast/site/categoryOrder) অনুযায়ী সাজাই; নতুন ক্যাটাগরি শেষে */
+  const ord=svcCatOrderList(), sorted=new Map();
+  ord.forEach(n=>{ sorted.set(n, m.has(n)?m.get(n):0); }); /* সংরক্ষিত খালি ক্যাটাগরিও দেখাই */
+  m.forEach((v,n)=>{ if(!sorted.has(n)) sorted.set(n,v); });
+  return sorted;
+}
+const SVC_CAT_COLORS=["#1F4B3B","#B8860B","#1F7A8C","#8A4B8F","#C2571A","#3B6EA5"];
+function svcCategoryListView(){
+  const groups=svcCatGroups();
+  svcCatNames=[...groups.keys()];
   return `
-  <div class="section-head"><h2>${L.head}</h2><button class="btn btn-primary btn-sm" onclick='addService("${kind}")'>${L.add}</button></div>
+  <div class="section-head"><h2>সেবা ও মূল্য তালিকা</h2><button class="btn btn-primary btn-sm" onclick="addSvcCategory()">＋ নতুন ক্যাটাগরি</button></div>
+  <p style="font-size:13px;color:var(--ink-soft);margin:-8px 0 16px;">ওয়েবসাইটে প্রথমে এই ক্যাটাগরি কার্ডগুলো দেখানো হয়। কার্ড টেনে (ড্র্যাগ করে) নতুন জায়গায় ছেড়ে দিন, অথবা কার্ডের ◀ ▶ বাটন দিয়ে ক্রম বদলান — ওয়েবসাইটেও এই ক্রমেই দেখাবে। কোনো ক্যাটাগরিতে চাপ দিয়ে ভেতরের সেবা দেখুন, সম্পাদনা করুন বা নতুন সেবা যুক্ত করুন।</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;">
+    ${svcCatNames.length?svcCatNames.map((n,i)=>`<div role="button" tabindex="0" class="card svc-cat-card" draggable="true" onclick="openSvcCat(${i})" onkeydown="if(event.key==='Enter')openSvcCat(${i})"
+      ondragstart="svCatDragStart(event,${i})" ondragover="svCatDragOver(event,${i})" ondragleave="svCatDragLeave(event)" ondrop="svCatDrop(event,${i})" ondragend="svCatDragEnd(event)"
+      style="position:relative;text-align:left;cursor:grab;border:2px solid var(--line);border-top:5px solid ${SVC_CAT_COLORS[i%SVC_CAT_COLORS.length]};padding:16px;font:inherit;color:inherit;background:#fff;">
+      <div style="position:absolute;top:8px;right:8px;display:flex;gap:4px;align-items:center;">
+        <button type="button" class="btn btn-soft btn-sm" title="আগে সরান" ${i===0?"disabled":""} onclick="event.stopPropagation();moveSvcCat(${i},-1)" style="padding:2px 8px;">◀</button>
+        <button type="button" class="btn btn-soft btn-sm" title="পরে সরান" ${i===svcCatNames.length-1?"disabled":""} onclick="event.stopPropagation();moveSvcCat(${i},1)" style="padding:2px 8px;">▶</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin:0 0 6px;">
+        ${svcCatLogo(n)?`<img src="${esc(svcCatLogo(n))}" alt="" style="width:40px;height:40px;border-radius:9px;object-fit:cover;border:1px solid var(--line);flex-shrink:0;">`:`<span style="font-size:22px;">📁</span>`}
+        <h4 style="font-size:16px;margin:0;">${esc(n)}</h4>
+      </div>
+      <div style="font-size:13px;color:var(--ink-soft);">${groups.get(n)} টি সেবা</div>
+      <div style="margin-top:12px;font-weight:600;font-size:13.5px;color:${SVC_CAT_COLORS[i%SVC_CAT_COLORS.length]};">খুলুন →</div>
+    </div>`).join(""):`<div class="empty">এখনো কোনো ক্যাটাগরি নেই। উপরের "নতুন ক্যাটাগরি" বাটন দিয়ে যোগ করুন।</div>`}
+  </div>`;
+}
+let svCatDragIdx=null;
+async function saveSvcCatOrder(names){
+  try{ await set(ref(db,"dorkhast/site/categoryOrder"), names); toast("ক্যাটাগরির ক্রম সংরক্ষণ হয়েছে ✓"); }
+  catch(e){ toast("ক্রম পরিবর্তন ব্যর্থ: "+e.message); }
+}
+function svCatMove(from,to){
+  const names=[...svcCatNames];
+  if(from===to||from<0||to<0||from>=names.length||to>=names.length) return;
+  const [x]=names.splice(from,1); names.splice(to,0,x);
+  svcCatNames=names;
+  if(D.site) D.site.categoryOrder=names;
+  render(activeTab);
+  saveSvcCatOrder(names);
+}
+window.moveSvcCat=(i,dir)=>svCatMove(i,i+dir);
+window.svCatDragStart=(e,i)=>{ svCatDragIdx=i; e.dataTransfer.effectAllowed="move"; try{ e.dataTransfer.setData("text/plain",String(i)); }catch(_){} e.currentTarget.style.opacity=".5"; };
+window.svCatDragOver=(e,i)=>{ if(svCatDragIdx===null) return; e.preventDefault(); e.dataTransfer.dropEffect="move"; e.currentTarget.style.outline="3px dashed var(--green)"; };
+window.svCatDragLeave=e=>{ e.currentTarget.style.outline=""; };
+window.svCatDrop=(e,i)=>{ e.preventDefault(); e.currentTarget.style.outline=""; const from=svCatDragIdx; svCatDragIdx=null; if(from!==null) svCatMove(from,i); };
+window.svCatDragEnd=e=>{ svCatDragIdx=null; e.currentTarget.style.opacity=""; document.querySelectorAll(".svc-cat-card").forEach(c=>c.style.outline=""); };
+window.openSvcCat=i=>{ svcAdminCat=svcCatNames[i]??null; render(activeTab); };
+window.closeSvcCat=()=>{ svcAdminCat=null; render(activeTab); };
+window.addSvcCategory=()=>{
+  modal("নতুন ক্যাটাগরি", `
+    <div class="field"><label>ক্যাটাগরির নাম</label><input id="svNewCat" placeholder="যেমন: চাকরির আবেদন" autocomplete="off"></div>
+    <p style="font-size:12px;color:var(--ink-soft);margin:0 0 12px;">ক্যাটাগরি তৈরির পর ভেতরে গিয়ে "নতুন সেবা" দিয়ে সেবা যুক্ত করুন। ক্যাটাগরিতে অন্তত একটি সেবা যুক্ত হলে তবেই ওয়েবসাইটে দেখাবে।</p>
+    <button class="btn btn-primary btn-wide" onclick="saveNewSvcCategory()">তৈরি করুন</button>`);
+};
+window.saveNewSvcCategory=async()=>{
+  const name=($("svNewCat").value||"").trim();
+  if(!name) return toast("ক্যাটাগরির নাম দিন");
+  if(!svcCatGroups().has(name)){
+    svcPendingCats.push(name);
+    const names=[...svcCatGroups().keys()]; /* এতে নতুন নামটিও আছে (pending থেকে) */
+    try{ await set(ref(db,"dorkhast/site/categoryOrder"), names); if(D.site) D.site.categoryOrder=names; }
+    catch(e){ console.error(e); toast("ক্যাটাগরি সংরক্ষণ ব্যর্থ: "+e.message); }
+  }
+  svcAdminCat=name; closeModal(); render(activeTab);
+};
+window.deleteSvcCat=async()=>{
+  if(svcAdminCat===null) return;
+  const n=svcItems("services").filter(([id,s])=>svcCatName(s)===svcAdminCat).length;
+  if(n) return toast("এই ক্যাটাগরিতে সেবা আছে — আগে সেবাগুলো মুছুন বা অন্য ক্যাটাগরিতে নিন");
+  if(!confirm("খালি ক্যাটাগরিটি মুছে ফেলবেন?")) return;
+  try{
+    const name=svcAdminCat;
+    svcPendingCats=svcPendingCats.filter(x=>x!==name);
+    const names=svcCatOrderList().filter(x=>x!==name);
+    await set(ref(db,"dorkhast/site/categoryOrder"), names.length?names:null);
+    if(D.site) D.site.categoryOrder=names;
+    if(svcLogoStore().some(x=>x.name===name)) await svcWriteLogoStore(svcLogoStore().filter(x=>x.name!==name));
+    svcAdminCat=null; toast("ক্যাটাগরি মুছে ফেলা হয়েছে"); render(activeTab);
+  }catch(e){ toast("মুছতে ব্যর্থ: "+e.message); }
+};
+window.renameSvcCat=()=>{
+  if(svcAdminCat===null) return;
+  modal("ক্যাটাগরির নাম পরিবর্তন", `
+    <div class="field"><label>নতুন নাম</label><input id="svRenameCat" value="${esc(svcAdminCat)}" autocomplete="off"></div>
+    <p style="font-size:12px;color:var(--ink-soft);margin:0 0 12px;">এই ক্যাটাগরির সব সেবার ক্যাটাগরি নাম বদলে যাবে।</p>
+    <button class="btn btn-primary btn-wide" onclick="saveRenameSvcCat()">সংরক্ষণ করুন</button>`);
+};
+window.saveRenameSvcCat=async()=>{
+  const nn=($("svRenameCat").value||"").trim(), old=svcAdminCat;
+  if(!nn) return toast("ক্যাটাগরির নাম দিন");
+  if(nn===old){ closeModal(); return; }
+  try{
+    const updates={};
+    svcItems("services").forEach(([id,s])=>{ if(svcCatName(s)===old) updates[`dorkhast/site/services/${id}/category`]=nn; });
+    if(Object.keys(updates).length) await update(ref(db),updates);
+    svcPendingCats=svcPendingCats.map(n=>n===old?nn:n);
+    const ordList=svcCatOrderList();
+    if(ordList.includes(old)) await set(ref(db,"dorkhast/site/categoryOrder"), ordList.map(n=>n===old?nn:n));
+    if(svcLogoStore().some(x=>x.name===old)) await svcWriteLogoStore(svcLogoStore().map(x=>x.name===old?{...x,name:nn}:x));
+    if(svcPendingLogos[old]){ svcPendingLogos[nn]=svcPendingLogos[old]; delete svcPendingLogos[old]; }
+    svcAdminCat=nn; closeModal(); toast("ক্যাটাগরির নাম পরিবর্তন হয়েছে ✓"); render(activeTab);
+  }catch(e){ toast("পরিবর্তন ব্যর্থ: "+e.message); }
+};
+function svcView(kind){
+  if(kind==="services" && svcAdminCat===null) return svcCategoryListView();
+  const L=SVC_KINDS[kind];
+  const inCat=(kind==="services");
+  const items=inCat?svcItems(kind).filter(([id,s])=>svcCatName(s)===svcAdminCat):svcItems(kind);
+  return `
+  ${inCat?`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;"><button class="btn btn-soft btn-sm" onclick="closeSvcCat()">← সব ক্যাটাগরি</button><button class="btn btn-soft btn-sm" onclick="renameSvcCat()">ক্যাটাগরির নাম বদলান</button>${items.length?"":`<button class="btn btn-danger btn-sm" onclick="deleteSvcCat()">খালি ক্যাটাগরি মুছুন</button>`}</div>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+    ${svcCatLogo(svcAdminCat)?`<img src="${esc(svcCatLogo(svcAdminCat))}" alt="" style="width:48px;height:48px;border-radius:11px;object-fit:cover;border:1px solid var(--line);">`:`<span style="width:48px;height:48px;border-radius:11px;border:1.5px dashed var(--line);display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--ink-soft);">📁</span>`}
+    <button class="btn btn-soft btn-sm" onclick="document.getElementById('svCatLogoFile').click()">${svcCatLogo(svcAdminCat)?"লোগো বদলান":"বর্গাকার লোগো যুক্ত করুন"}</button>
+    ${svcCatLogo(svcAdminCat)?`<button class="btn btn-danger btn-sm" onclick="svClearCatLogo()">লোগো মুছুন</button>`:""}
+    <input type="file" id="svCatLogoFile" accept="image/*" style="display:none" onchange="svPickCatLogo()">
+    <span style="font-size:12px;color:var(--ink-soft);">যে সাইজের ছবিই দিন, না কেটে বর্গাকার ফ্রেমে বসানো হবে।</span>
+  </div>`:""}
+  <div class="section-head"><h2>${inCat?"📁 "+esc(svcAdminCat):L.head}</h2><button class="btn btn-primary btn-sm" onclick='addService("${kind}")'>${L.add}</button></div>
   <p style="font-size:13px;color:var(--ink-soft);margin:-8px 0 16px;">${L.note}</p>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;">
     ${items.length?items.map(([id,s],i)=>`<div class="card svc-card" draggable="true" data-id="${id}"
@@ -2010,6 +2211,7 @@ function svcView(kind){
         ${s.discountPrice?`<span style="text-decoration:line-through;color:var(--ink-soft);font-size:13px;margin-right:6px;">${esc(s.price)}</span><span style="color:#e0342b;font-weight:700;font-size:17px;">${esc(s.discountPrice)}</span>`:`<span style="color:var(--gold);font-weight:700;font-size:17px;">${esc(s.price)}</span>`}
       </div>
       ${s.desc?`<p style="font-size:13px;color:var(--ink-soft);margin-top:6px;white-space:pre-line;">${esc(s.desc)}</p>`:""}
+      ${s.expiresAt?`<p style="font-size:12px;color:#8A5300;margin-top:6px;">⏳ মেয়াদ শেষ: ${fmt(s.expiresAt)}</p>`:""}
       ${s.link?`<p style="font-size:12px;color:var(--ink-soft);margin-top:6px;word-break:break-all;">🔗 ${esc(s.link)}</p>`:""}
       <div class="list-actions" style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn btn-soft btn-sm" title="উপরে সরান" ${i===0?"disabled":""} onclick='moveService("${kind}","${id}",-1)'>↑</button>
@@ -2017,7 +2219,7 @@ function svcView(kind){
         <button class="btn btn-soft btn-sm" onclick='editService("${kind}","${id}")'>সম্পাদনা</button>
         <button class="btn btn-danger btn-sm" onclick='deleteEntry("${kind}","${id}")'>মুছুন</button>
       </div>
-    </div>`).join(""):`<div class="empty">${L.empty}</div>`}
+    </div>`).join(""):`<div class="empty">${inCat?"এই ক্যাটাগরিতে এখনো কোনো সেবা নেই। উপরের \"নতুন সেবা\" বাটন দিয়ে যোগ করুন।":L.empty}</div>`}
   </div>`;
 }
 let svcDragSrcId=null, svcDragKind=null;
@@ -2061,7 +2263,7 @@ async function reorderServices(kind,srcId,targetId){
   }catch(e){ toast("ক্রম পরিবর্তন ব্যর্থ: "+e.message); }
 }
 window.moveService=async function(kind, id, dir){
-  const items=svcItems(kind);
+  const items=(kind==="services" && svcAdminCat!==null)?svcItems(kind).filter(([k,x])=>svcCatName(x)===svcAdminCat):svcItems(kind);
   const idx=items.findIndex(([k])=>k===id);
   const swapIdx=idx+dir;
   if(idx<0||swapIdx<0||swapIdx>=items.length) return;
@@ -2074,7 +2276,7 @@ window.moveService=async function(kind, id, dir){
     await update(ref(db), updates);
   }catch(e){ toast("ক্রম পরিবর্তন ব্যর্থ: "+e.message); }
 };
-window.addService=kind=>serviceModal(kind);
+window.addService=kind=>{ if(kind==="services" && svcAdminCat!==null) serviceModal(kind,undefined,{category:svcAdminCat==="অন্যান্য"?"":svcAdminCat}); else serviceModal(kind); };
 window.editService=(kind,id)=>serviceModal(kind, id, D.site[kind][id]);
 let svcModalImage="";
 window.svPickImage=async function(){
@@ -2094,14 +2296,34 @@ function serviceModal(kind, id, s){
   const L=SVC_KINDS[kind];
   const isSpecial=(kind==="specialCards");
   svcModalImage=isSpecial?(s.image||""):"";
+  window.svRows=isSpecial?[]:(Array.isArray(s.rows)?s.rows:Object.values(s.rows||{})).map(r=>({text:String((r&&r.text)||""),price:String((r&&r.price)||"")}));
   modal(id?L.modalEdit:L.modalNew, `
     <div class="field"><label>নাম</label><input id="svTitle" value="${esc(s.title||"")}" placeholder="যেমন: ভর্তির আবেদন"></div>
+    ${isSpecial?"":`<div class="field"><label>ক্যাটাগরি (ওয়েবসাইটে এই নামে ক্যাটাগরি কার্ড হবে; ফাঁকা রাখলে "অন্যান্য"-তে যাবে)</label><input id="svCategory" list="svCategoryList" value="${esc(s.category||"")}" placeholder="যেমন: চাকরির আবেদন" autocomplete="off">
+      <datalist id="svCategoryList">${[...new Set(Object.values(D.site?.services||{}).map(x=>String(x.category||"").trim()).filter(Boolean))].map(c=>`<option value="${esc(c)}"></option>`).join("")}</datalist>
+      <p style="font-size:12px;color:var(--ink-soft);margin:4px 0 0;">আগের ক্যাটাগরি তালিকা থেকে বেছে নিন, অথবা নতুন নাম লিখুন। একই নামের সেবাগুলো একই ক্যাটাগরিতে দেখাবে।</p></div>`}
     <div class="field"><label>মূল্য (ছাড় না থাকলে এটিই মূল প্রদর্শিত মূল্য)</label><input id="svPrice" value="${esc(s.price||"")}" placeholder="যেমন: ১০০"></div>
     <div class="field"><label>ছাড়ের পর মূল্য (ঐচ্ছিক — দিলে উপরের মূল্য কাটা দাগ দিয়ে দেখাবে)</label><input id="svDiscountPrice" value="${esc(s.discountPrice||"")}" placeholder="যেমন: ৮০"></div>
     <div class="field"><label>ছাড়ের ব্যাজ (ঐচ্ছিক)</label><input id="svDiscount" value="${esc(s.discount||"")}" placeholder="যেমন: 20% OFF অথবা 50 TK OFF"></div>
+    <div class="field"><label>মেয়াদ শেষের তারিখ ও সময় (ঐচ্ছিক — সময় পার হলে কার্ডটি নিজে নিজেই মুছে যাবে; খালি রাখলে স্থায়ী)</label>
+      <input type="datetime-local" id="svExpiry" value="${s.expiresAt?toLocalDatetimeValue(s.expiresAt):""}">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+        <button type="button" class="btn btn-soft btn-sm" onclick="setSvExpiryDays(1)">১ দিন</button>
+        <button type="button" class="btn btn-soft btn-sm" onclick="setSvExpiryDays(3)">৩ দিন</button>
+        <button type="button" class="btn btn-soft btn-sm" onclick="setSvExpiryDays(7)">৭ দিন</button>
+        <button type="button" class="btn btn-soft btn-sm" onclick="setSvExpiryDays(15)">১৫ দিন</button>
+        <button type="button" class="btn btn-soft btn-sm" onclick="setSvExpiryDays(30)">৩০ দিন</button>
+        <button type="button" class="btn btn-soft btn-sm" onclick="$('svExpiry').value=''">মেয়াদ নেই</button>
+      </div>
+    </div>
     <div class="field"><label>বিবরণ / প্রয়োজনীয় তথ্য (প্রতি লাইনে একটি পয়েন্ট লিখুন)</label><textarea id="svDesc" placeholder="যেমন:\nজাতীয় পরিচয়পত্র\nএকাডেমিক সার্টিফিকেট">${esc(s.desc||"")}</textarea>
       <p style="font-size:12px;color:var(--ink-soft);margin:4px 0 0;">এই লেখাটাই কার্ডের বিবরণ হিসেবে এবং অর্ডার ফর্মের "প্রয়োজনীয় তথ্য" বক্সে দেখানো হয়।</p>
     </div>
+    ${isSpecial?"":`<div class="field"><label>ফিল্ড / সারি তালিকা (ঐচ্ছিক) — কাস্টমার "বিস্তারিত" চাপলে বিবরণের নিচে এগুলো সারি আকারে দেখাবে, প্রতিটি সারির ডানে "অর্ডার করুন" বাটন থাকবে</label>
+      <div id="svRows"></div>
+      <button type="button" class="btn btn-soft btn-sm" onclick="svAddRow()">＋ ফিল্ড যুক্ত করুন</button>
+      <p style="font-size:12px;color:var(--ink-soft);margin:6px 0 0;">অর্ডার বাটনে চাপলে সেই সারির লেখা ও মূল্যসহ অর্ডার ফর্ম খুলবে। কোনো সারি না দিলে বিস্তারিত পপআপে সাধারণ "অর্ডার করুন" বাটন থাকবে।</p>
+    </div>`}
     ${isSpecial?`
     <div class="field"><label>আইকন ছবি (ঐচ্ছিক — কার্ডের নামের পাশে ছোট করে দেখাবে)</label>
       <input type="file" id="svImageFile" accept="image/*" onchange="svPickImage()">
@@ -2110,17 +2332,33 @@ function serviceModal(kind, id, s){
     <div class="field"><label>অর্ডার লিংক (ঐচ্ছিক — দিলে "অর্ডার করুন" চাপলে অর্ডার ফর্মের বদলে এই লিংক খুলবে)</label><input id="svLink" value="${esc(s.link||"")}" placeholder="যেমন: https://example.com"></div>`:""}
     <button class="btn btn-primary btn-wide" onclick='saveService("${kind}","${id||""}")'>সংরক্ষণ করুন</button>
   `);
-  if(isSpecial) svRefreshImagePreview();
+  if(isSpecial) svRefreshImagePreview(); else svRenderRows();
 }
+function svRenderRows(){
+  const box=$("svRows"); if(!box) return;
+  box.innerHTML=window.svRows.map((r,i)=>`<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+    <input value="${esc(r.text)}" oninput="svRows[${i}].text=this.value" placeholder="ফিল্ডের লেখা (যেমন: প্রাণিসম্পদ অধিদপ্তরে আবেদন)" style="flex:1;min-width:0;">
+    <input value="${esc(r.price)}" oninput="svRows[${i}].price=this.value" placeholder="মূল্য (ঐচ্ছিক)" style="width:110px;flex:none;">
+    <button type="button" class="btn btn-danger btn-sm" onclick="svDelRow(${i})" aria-label="মুছুন">✕</button>
+  </div>`).join("");
+}
+window.svAddRow=function(){ window.svRows.push({text:"",price:""}); svRenderRows(); const ins=$("svRows").querySelectorAll("input"); if(ins.length>=2) ins[ins.length-2].focus(); };
+window.svDelRow=function(i){ window.svRows.splice(i,1); svRenderRows(); };
+window.setSvExpiryDays=function(days){ $("svExpiry").value=toLocalDatetimeValue(Date.now()+days*864e5); };
 window.saveService=async function(kind,id){
   const title=$("svTitle").value.trim(), price=$("svPrice").value.trim(), desc=$("svDesc").value.trim();
   const discountPrice=$("svDiscountPrice").value.trim();
   const discount=$("svDiscount").value.trim();
   if(!title||!price) return toast("নাম ও মূল্য দিন");
+  const expRaw=($("svExpiry")?.value||"").trim();
+  const expiresAt=expRaw?new Date(expRaw).getTime():0;
+  if(expRaw && (!expiresAt || expiresAt<=Date.now())) return toast("মেয়াদ শেষের সময় ভবিষ্যতের হতে হবে");
   try{
     const key=id||push(ref(db,"dorkhast/site/"+kind)).key;
     const sort=id?(D.site[kind][id].sort||0):(Date.now());
     const data={title, price, discountPrice, discount, desc, sort};
+    if(expiresAt) data.expiresAt=expiresAt;
+    if(kind==="services"){ data.rows=(window.svRows||[]).map(r=>({text:String(r.text||"").trim(),price:String(r.price||"").trim()})).filter(r=>r.text); data.category=($("svCategory")?.value||"").trim(); data.categoryLogo=svcCatLogo(data.category||"অন্যান্য")||""; }
     if(kind==="specialCards"){ data.image=svcModalImage||""; data.link=($("svLink")?.value||"").trim(); }
     await set(ref(db,"dorkhast/site/"+kind+"/"+key), data);
     closeModal(); toast(SVC_KINDS[kind].saved);
@@ -2134,6 +2372,41 @@ window.deleteEntry=async function(kind,id){
     toast("মুছে ফেলা হয়েছে");
   }catch(e){ toast("মুছতে সমস্যা: "+e.message); }
 };
+
+/* ---- মেয়াদোত্তীর্ণ সেবা কার্ড ও ডেলিভারির ২৪ ঘণ্টা পার হওয়া অর্ডার অটো-ডিলিট ---- */
+const svcCleanupInFlight=new Set();
+function cleanupExpiredServices(){
+  const now=Date.now();
+  ["services","specialCards"].forEach(kind=>{
+    Object.entries(D.site?.[kind]||{}).forEach(([id,s])=>{
+      const key=kind+"/"+id;
+      if(s && Number(s.expiresAt) && Number(s.expiresAt)<=now && !svcCleanupInFlight.has(key)){
+        svcCleanupInFlight.add(key);
+        remove(ref(db,"dorkhast/site/"+kind+"/"+id)).catch(e=>{ console.error(e); svcCleanupInFlight.delete(key); });
+      }
+    });
+  });
+}
+const orderCleanupInFlight=new Set();
+function cleanupDeliveredOrders(){
+  if(!D.orders) return;
+  const now=Date.now(), DAY=24*60*60*1000;
+  Object.entries(D.orders).forEach(([id,o])=>{
+    if(!o || o.status!=="delivered" || orderCleanupInFlight.has(id)) return;
+    const u={};
+    if(!o.deliveredAt){
+      /* আগের ডেলিভারি-সম্পন্ন অর্ডারের সময় জানা নেই — এখন থেকে ২৪ ঘণ্টা গণনা শুরু */
+      u[`dorkhast/orders/${id}/deliveredAt`]=now;
+      if(o.phone) u[`dorkhast/ordersByPhone/${o.phone}/${id}/deliveredAt`]=now;
+    }else if(now-o.deliveredAt>=DAY){
+      u[`dorkhast/orders/${id}`]=null;
+      if(o.phone) u[`dorkhast/ordersByPhone/${o.phone}/${id}`]=null;
+    }else return;
+    orderCleanupInFlight.add(id);
+    update(ref(db),u).then(()=>{ if(!o.deliveredAt) orderCleanupInFlight.delete(id); }).catch(e=>{ console.error(e); orderCleanupInFlight.delete(id); });
+  });
+}
+setInterval(()=>{ if(auth.currentUser){ cleanupExpiredServices(); cleanupDeliveredOrders(); } }, 60000);
 
 /* ---- notice board ---- */
 let noticeCleanupInFlight=new Set();
@@ -2698,7 +2971,7 @@ window.sendBulkMessage=function(sectionId){
 
 /* ---- site info ---- */
 function siteView(){
-  const hero=D.site?.hero||{}, contact=D.site?.contact||{}, logo=D.site?.logo||"", paymentQR=D.site?.paymentQR||"";
+  const contact=D.site?.contact||{}, logo=D.site?.logo||"", paymentQR=D.site?.paymentQR||"";
   const marqueeRaw=D.site?.marquee||[];
   const marqueeList=Array.isArray(marqueeRaw)?marqueeRaw:Object.values(marqueeRaw);
   return `
@@ -2711,10 +2984,6 @@ function siteView(){
     </div>`:`<p class="empty" style="padding:0 0 14px;text-align:left;">এখনও কোনো লোগো যুক্ত করা হয়নি — ওয়েবসাইটে ব্র্যান্ডের লেখা দেখানো হচ্ছে।</p>`}
     <div class="field"><label>নতুন লোগো ছবি নির্বাচন করুন</label><input type="file" id="logoFile" accept="image/*"></div>
     <button class="btn btn-primary btn-sm" onclick="uploadLogo()" style="margin-bottom:20px;">লোগো সংরক্ষণ করুন</button>
-
-    <h4 style="margin-bottom:12px;">হিরো সেকশন</h4>
-    <div class="field"><label>শিরোনাম (HTML &lt;br&gt; ব্যবহার করা যাবে)</label><input id="heroTitle" value="${esc(hero.title||"")}"></div>
-    <div class="field"><label>সাবটাইটেল</label><textarea id="heroSub">${esc(hero.subtitle||"")}</textarea></div>
 
     <h4 style="margin:20px 0 12px;">স্ক্রলিং টেক্সট (ব্যানার ও হিরো সেকশনের মাঝে অনবরত স্ক্রল হবে)</h4>
     <div class="field"><label>প্রতি লাইনে একটি করে লেখা লিখুন (খালি রাখলে স্ক্রলিং বার দেখানো হবে না)</label><textarea id="marqueeTexts" rows="5" placeholder="যেমন:&#10;বিশেষ অফার — এই মাসে ২০% ছাড়&#10;২৪ ঘণ্টার মধ্যে ডেলিভারি&#10;সারাদেশে হোম ডেলিভারি">${esc(marqueeList.join("\n"))}</textarea></div>
@@ -2818,7 +3087,6 @@ window.saveMarquee=async function(){
 window.saveSiteInfo=async function(){
   try{
     await update(ref(db,"dorkhast/site"), {
-      hero:{title:$("heroTitle").value.trim(), subtitle:$("heroSub").value.trim()},
       contact:{
         whatsapp:$("cWa").value.trim(), facebook:$("cFb").value.trim(), phoneDisplay:$("cPhone").value.trim(),
         email:$("cEmail").value.trim(), address:$("cAddr").value.trim(),
@@ -2835,7 +3103,6 @@ window.loadDefaults=async function(){
   try{
     await update(ref(db,"dorkhast/site"), {
       services,
-      hero:{title:"কাগজে-কলমে যা কঠিন লাগে,<br>সেটাই আমরা সহজ করে দিই।", subtitle:"সিভি, কভার লেটার, চাকরির আবেদন আর ভর্তি ফরম — সঠিকভাবে, সময়মতো পূরণ করে দেওয়ার একটি ব্যক্তিগত সেবা।"},
       contact:{whatsapp:"8801XXXXXXXXX", phoneDisplay:"01XXX-XXXXXX", email:"hello@example.com", address:"ঢাকা, বাংলাদেশ", paymentBkash:"", paymentRocket:"", paymentNagad:""}
     });
     toast("ডিফল্ট মান লোড হয়েছে ✓");
