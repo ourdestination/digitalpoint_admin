@@ -2291,6 +2291,21 @@ function svRefreshImagePreview(){
   const box=$("svImagePreview"); if(!box) return;
   box.innerHTML=svcModalImage?`<img src="${svcModalImage}" alt="" style="height:36px;width:36px;object-fit:contain;border:1px solid var(--line);border-radius:6px;background:#fff;"> <button type="button" class="btn btn-danger btn-sm" onclick="svClearImage()">ছবি মুছুন</button>`:"";
 }
+/* ছাড়ের পর মূল্য বসালে ছাড়ের ব্যাজ (যেমন 20% OFF) নিজে থেকে হিসাব হয়ে বসে।
+   ব্যাজ হাতে লিখলে (manual) সেটি আর বদলাবে না; ব্যাজ ফাঁকা করলে আবার অটো হবে। */
+function svNum(v){
+  const en=String(v==null?"":v).replace(/[০-৯]/g,c=>"০১২৩৪৫৬৭৮৯".indexOf(c)).replace(/[,\s]/g,"");
+  const m=en.match(/\d+(\.\d+)?/); return m?parseFloat(m[0]):NaN;
+}
+function svAutoBadge(){
+  const bd=$("svDiscount"); if(!bd) return;
+  if(bd.dataset.manual==="1") return;
+  const price=svNum($("svPrice").value), dp=svNum($("svDiscountPrice").value);
+  if(!isNaN(price)&&!isNaN(dp)&&price>0&&dp>=0&&dp<price){
+    const pct=Math.round((price-dp)/price*1000)/10;
+    bd.value=(Number.isInteger(pct)?pct:pct.toFixed(1))+"% OFF";
+  }else{ bd.value=""; }
+}
 function serviceModal(kind, id, s){
   s=s||{};
   const L=SVC_KINDS[kind];
@@ -2302,9 +2317,9 @@ function serviceModal(kind, id, s){
     ${isSpecial?"":`<div class="field"><label>ক্যাটাগরি (ওয়েবসাইটে এই নামে ক্যাটাগরি কার্ড হবে; ফাঁকা রাখলে "অন্যান্য"-তে যাবে)</label><input id="svCategory" list="svCategoryList" value="${esc(s.category||"")}" placeholder="যেমন: চাকরির আবেদন" autocomplete="off">
       <datalist id="svCategoryList">${[...new Set(Object.values(D.site?.services||{}).map(x=>String(x.category||"").trim()).filter(Boolean))].map(c=>`<option value="${esc(c)}"></option>`).join("")}</datalist>
       <p style="font-size:12px;color:var(--ink-soft);margin:4px 0 0;">আগের ক্যাটাগরি তালিকা থেকে বেছে নিন, অথবা নতুন নাম লিখুন। একই নামের সেবাগুলো একই ক্যাটাগরিতে দেখাবে।</p></div>`}
-    <div class="field"><label>মূল্য (ছাড় না থাকলে এটিই মূল প্রদর্শিত মূল্য)</label><input id="svPrice" value="${esc(s.price||"")}" placeholder="যেমন: ১০০"></div>
-    <div class="field"><label>ছাড়ের পর মূল্য (ঐচ্ছিক — দিলে উপরের মূল্য কাটা দাগ দিয়ে দেখাবে)</label><input id="svDiscountPrice" value="${esc(s.discountPrice||"")}" placeholder="যেমন: ৮০"></div>
-    <div class="field"><label>ছাড়ের ব্যাজ (ঐচ্ছিক)</label><input id="svDiscount" value="${esc(s.discount||"")}" placeholder="যেমন: 20% OFF অথবা 50 TK OFF"></div>
+    <div class="field"><label>মূল্য (ছাড় না থাকলে এটিই মূল প্রদর্শিত মূল্য)</label><input oninput="svAutoBadge()" id="svPrice" value="${esc(s.price||"")}" placeholder="যেমন: ১০০"></div>
+    <div class="field"><label>ছাড়ের পর মূল্য (ঐচ্ছিক — দিলে উপরের মূল্য কাটা দাগ দিয়ে দেখাবে)</label><input oninput="svAutoBadge()" id="svDiscountPrice" value="${esc(s.discountPrice||"")}" placeholder="যেমন: ৮০"></div>
+    <div class="field"><label>ছাড়ের ব্যাজ (ঐচ্ছিক)</label><input oninput="this.dataset.manual=this.value.trim()?'1':''" id="svDiscount" value="${esc(s.discount||"")}" placeholder="যেমন: 20% OFF অথবা 50 TK OFF"></div>
     <div class="field"><label>মেয়াদ শেষের তারিখ ও সময় (ঐচ্ছিক — সময় পার হলে কার্ডটি নিজে নিজেই মুছে যাবে; খালি রাখলে স্থায়ী)</label>
       <input type="datetime-local" id="svExpiry" value="${s.expiresAt?toLocalDatetimeValue(s.expiresAt):""}">
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
@@ -2332,6 +2347,10 @@ function serviceModal(kind, id, s){
     <div class="field"><label>অর্ডার লিংক (ঐচ্ছিক — দিলে "অর্ডার করুন" চাপলে অর্ডার ফর্মের বদলে এই লিংক খুলবে)</label><input id="svLink" value="${esc(s.link||"")}" placeholder="যেমন: https://example.com"></div>`:""}
     <button class="btn btn-primary btn-wide" onclick='saveService("${kind}","${id||""}")'>সংরক্ষণ করুন</button>
   `);
+  { // আগে থেকে সেভ করা ব্যাজ অটো-হিসাবের থেকে আলাদা হলে (যেমন "50 TK OFF") সেটি হাতে লেখা ধরা হবে
+    const bd=$("svDiscount");
+    if(bd&&bd.value.trim()){ const keep=bd.value; svAutoBadge(); const auto=bd.value; bd.value=keep; bd.dataset.manual=(auto===keep)?"":"1"; }
+  }
   if(isSpecial) svRefreshImagePreview(); else svRenderRows();
 }
 function svRenderRows(){
